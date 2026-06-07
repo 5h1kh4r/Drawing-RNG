@@ -101,6 +101,7 @@ def analyze_enrollment(attempts: List[Dict[str, Any]], domain: str = "example.co
         "profile_scores": {p: profile_results[p]["stability_score"] for p in profile_results},
         "central_attempt": central["attempt"],
         "canonical_seed_material": seed_material,
+        "canonical_tokens": central["tokens"],
         "canonical_token_count": len(central["tokens"]),
         "warnings": warnings,
         "public_salt": salt,
@@ -113,14 +114,79 @@ def analyze_enrollment(attempts: List[Dict[str, Any]], domain: str = "example.co
     }
 
 
-def verify_redraw(enrollment_result: Dict[str, Any], redraw_strokes: List[Any]) -> Dict[str, Any]:
-    profile = enrollment_result.get("recommended_profile", "balanced")
-    canonical = enrollment_result.get("canonical_seed_material", "")
-    encoded = encode_json_payload({"strokes": redraw_strokes, "params": PROFILES[profile]})
-    # Compare tokens from canonical by splitting serialized tail is brittle, so if a caller
-    # needs verification use stored encoded tokens in a later version. This API returns tokens.
+def verify_redraw(
+    enrollment_result: Dict[str, Any],
+    redraw_strokes: List[Any],
+    threshold: float = 0.50,
+) -> Dict[str, Any]:
+    """Verify a fresh redraw against an enrolled Drawing-RNG profile.
+
+    Important design rule:
+      The fresh redraw is used only for verification. If accepted, outputs are
+      regenerated from the enrolled canonical_seed_material, not from the new
+      redraw tokens. This avoids changing the password/seed when the redraw is
+      slightly different but still close enough to unlock.
+    """
+    if not isinstance(enrollment_result, dict):
+        raise ValueError("enrollment_result must be an object")
+    if not isinstance(redraw_strokes, list) or not redraw_strokes:
+        raise ValueError("redraw_strokes must be a non-empty list")
+
+    canonical_tokens = enrollment_result.get("canonical_tokens")
+    if not isinstance(canonical_tokens, list) or not canonical_tokens:
+        raise ValueError(
+            "enrollment_result is missing canonical_tokens. "
+            "Re-run enrollment after updating analyze_enrollment()."
+        )
+
+    profile = enrollment_result.get("recommended_profile") or "balanced"
+    if profile not in PROFILES:
+        raise ValueError(f"Unknown enrolled profile: {profile}")
+
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        raise ValueError("threshold must be a number")
+    if not 0.0 <= threshold <= 1.0:
+        raise ValueError("threshold must be between 0.0 and 1.0")
+
+    redraw_encoded = encode_json_payload({
+        "strokes": redraw_strokes,
+        "params": PROFILES[profile],
+    })
+    redraw_tokens = redraw_encoded.get("tokens") or []
+
+    score = token_similarity(canonical_tokens, redraw_tokens)
+    accepted = score >= threshold
+
+    seed_material = enrollment_result.get("canonical_seed_material") or ""
+    salt = enrollment_result.get("public_salt") or ""
+    domain = (
+        enrollment_result.get("domain")
+        or (enrollment_result.get("outputs") or {}).get("domain")
+        or "example.com"
+    )
+
+    outputs = None
+    if accepted:
+        outputs = {
+            "seed_hex": seed_hex(seed_material, salt, "drawing-rng-master"),
+            "demo_password": demo_password(seed_material, salt, domain),
+            "domain": domain,
+            "avatar_palette": avatar_palette(seed_material, salt),
+        }
+
     return {
+        "accepted": accepted,
+        "score": score,
+        "threshold": threshold,
         "profile": profile,
-        "encoded": encoded,
-        "note": "For production-style verification store canonical tokens, not only serialized text.",
+        "domain": domain,
+        "outputs": outputs,
+        "canonical_token_count": len(canonical_tokens),
+        "redraw_token_count": len(redraw_tokens),
+        "similarity_report": similarity_report(canonical_tokens, redraw_tokens),
+        "redraw_tokens": redraw_tokens,
+        "redraw_serialized": redraw_encoded.get("serialized"),
+        "redraw_stats": redraw_encoded.get("stats") or {},
     }

@@ -16,7 +16,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from drawing_rng.enrollment import analyze_enrollment
+from drawing_rng.enrollment import analyze_enrollment, verify_redraw
 from drawing_rng.profiles import get_profile
 from drawing_rng.stroke_token_encoder import encode_json_payload
 
@@ -146,6 +146,32 @@ def analyze_enrollment_route():
             attempts=attempts,
             domain=str(payload.get("domain") or "example.com"),
             salt=payload.get("public_salt"),
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.post("/api/verify_redraw")
+def verify_redraw_route():
+    payload = request.get_json(force=True, silent=False)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "JSON body must be an object"}), 400
+
+    enrollment_result = payload.get("enrollment_result")
+    redraw_strokes = payload.get("redraw_strokes")
+    threshold = payload.get("threshold", 0.50)
+
+    if not isinstance(enrollment_result, dict):
+        return jsonify({"error": "Missing or invalid enrollment_result"}), 400
+    if not isinstance(redraw_strokes, list) or not redraw_strokes:
+        return jsonify({"error": "Missing or invalid redraw_strokes"}), 400
+
+    try:
+        result = verify_redraw(
+            enrollment_result=enrollment_result,
+            redraw_strokes=redraw_strokes,
+            threshold=threshold,
         )
         return jsonify(result)
     except Exception as exc:
