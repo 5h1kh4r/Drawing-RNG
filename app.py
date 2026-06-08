@@ -33,6 +33,9 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 PROMPT_TABLE = os.environ.get("PROMPT_TABLE", "stroke_samples")
 ENROLLMENT_TABLE = os.environ.get("ENROLLMENT_TABLE", "drawing_seed_enrollments")
+VERIFICATION_TABLE = os.environ.get("VERIFICATION_TABLE", "drawing_seed_verifications")
+AUTO_LOG_ENROLLMENTS = os.environ.get("AUTO_LOG_ENROLLMENTS", "1") != "0"
+AUTO_LOG_VERIFICATIONS = os.environ.get("AUTO_LOG_VERIFICATIONS", "1") != "0"
 
 supabase = None
 if create_client and SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
@@ -60,6 +63,95 @@ def _save_local(kind: str, payload: Dict[str, Any]) -> str:
     return str(path.relative_to(ROOT))
 
 
+_SECRET_KEYS = {
+    "demo_password",
+    "seed_hex",
+    "secret_hex",
+    "secret_hex_for_demo_only",
+    "canonical_seed_material",
+}
+
+
+def _redact_for_logs(obj: Any) -> Any:
+    """Remove directly reusable secret outputs before storing research logs."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if k in _SECRET_KEYS:
+                out[k] = "[redacted]"
+            elif k == "outputs" and isinstance(v, dict):
+                # Keep domain/source but redact generated password/seed material.
+                out[k] = _redact_for_logs(v)
+            else:
+                out[k] = _redact_for_logs(v)
+        return out
+    if isinstance(obj, list):
+        return [_redact_for_logs(x) for x in obj]
+    return obj
+
+
+def _insert_supabase(table: str, row: Dict[str, Any]) -> str | None:
+    if not supabase:
+        return None
+    res = supabase.table(table).insert(row).execute()
+    return (res.data or [{}])[0].get("id")
+
+
+def _log_enrollment(participant_id: Any, seed_label: Any, attempts: Any, result: Dict[str, Any], notes: Any = "", ui_version: str = "seed-enrollment-codefreeze") -> Dict[str, Any]:
+    row = {
+        "participant_id": participant_id,
+        "seed_label": seed_label or "drawing_seed",
+        "attempt_count": len(attempts) if isinstance(attempts, list) else 0,
+        "attempts": attempts if isinstance(attempts, list) else [],
+        "analysis_result": _redact_for_logs(result),
+        "accepted_for_demo": result.get("accepted_for_demo"),
+        "stability_score": result.get("stability_score"),
+        "recommended_profile": result.get("recommended_profile"),
+        "public_salt": result.get("public_salt"),
+        "ui_version": ui_version,
+        "notes": notes or "",
+        "user_agent": request.headers.get("User-Agent", ""),
+    }
+    if supabase:
+        eid = _insert_supabase(ENROLLMENT_TABLE, row)
+        return {"storage": "supabase", "id": eid}
+    path = _save_local("enrollments", row)
+    return {"storage": "local", "path": path}
+
+
+def _log_verification(payload: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    enrollment_result = payload.get("enrollment_result") or {}
+    geometry_scores = result.get("geometry_scores") or {}
+    fuzzy = result.get("fuzzy_recovery") or {}
+    row = {
+        "enrollment_id": payload.get("enrollment_id") or enrollment_result.get("enrollment_id"),
+        "participant_id": payload.get("participant_id"),
+        "seed_label": payload.get("seed_label"),
+        "attempt_type": payload.get("attempt_type") or "owner_test",
+        "redraw_strokes": payload.get("redraw_strokes") or [],
+        "verification_result": _redact_for_logs(result),
+        "accepted": result.get("accepted"),
+        "profile": result.get("profile"),
+        "final_score": result.get("final_score") or result.get("score"),
+        "token_score": result.get("token_score"),
+        "geometry_final": geometry_scores.get("geometry_final"),
+        "layout_score": geometry_scores.get("layout"),
+        "relation_score": geometry_scores.get("relation"),
+        "curve_score": geometry_scores.get("curve"),
+        "stroke_shape_score": geometry_scores.get("stroke_shape"),
+        "fuzzy_ok": fuzzy.get("ok") if isinstance(fuzzy, dict) else None,
+        "fuzzy_mode": fuzzy.get("ecc_mode") if isinstance(fuzzy, dict) else None,
+        "failure_reasons": result.get("failure_reasons") or [],
+        "ui_version": payload.get("ui_version", "seed-enrollment-codefreeze"),
+        "user_agent": request.headers.get("User-Agent", ""),
+    }
+    if supabase:
+        vid = _insert_supabase(VERIFICATION_TABLE, row)
+        return {"storage": "supabase", "id": vid}
+    path = _save_local("verifications", row)
+    return {"storage": "local", "path": path}
+
+
 @app.get("/")
 def index():
     return send_from_directory(STATIC, "index.html")
@@ -83,6 +175,9 @@ def health():
         "supabase_configured": supabase is not None,
         "prompt_table": PROMPT_TABLE,
         "enrollment_table": ENROLLMENT_TABLE,
+        "verification_table": VERIFICATION_TABLE,
+        "auto_log_enrollments": AUTO_LOG_ENROLLMENTS,
+        "auto_log_verifications": AUTO_LOG_VERIFICATIONS,
     })
 
 
@@ -147,6 +242,21 @@ def analyze_enrollment_route():
             domain=str(payload.get("domain") or "example.com"),
             salt=payload.get("public_salt"),
         )
+        if AUTO_LOG_ENROLLMENTS:
+            try:
+                saved = _log_enrollment(
+                    participant_id=payload.get("participant_id"),
+                    seed_label=payload.get("seed_label"),
+                    attempts=attempts,
+                    result=result,
+                    notes=payload.get("notes", ""),
+                    ui_version=payload.get("ui_version", "seed-enrollment-codefreeze"),
+                )
+                result["enrollment_saved"] = saved
+                if saved.get("id"):
+                    result["enrollment_id"] = saved.get("id")
+            except Exception as log_exc:
+                result["enrollment_log_error"] = str(log_exc)
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -160,7 +270,8 @@ def verify_redraw_route():
 
     enrollment_result = payload.get("enrollment_result")
     redraw_strokes = payload.get("redraw_strokes")
-    threshold = payload.get("threshold", 0.50)
+    threshold = payload.get("threshold")
+    fuzzy_required = bool(payload.get("fuzzy_required", False))
 
     if not isinstance(enrollment_result, dict):
         return jsonify({"error": "Missing or invalid enrollment_result"}), 400
@@ -172,7 +283,16 @@ def verify_redraw_route():
             enrollment_result=enrollment_result,
             redraw_strokes=redraw_strokes,
             threshold=threshold,
+            fuzzy_required=fuzzy_required,
         )
+        if AUTO_LOG_VERIFICATIONS:
+            try:
+                saved = _log_verification(payload, result)
+                result["verification_saved"] = saved
+                if saved.get("id"):
+                    result["verification_id"] = saved.get("id")
+            except Exception as log_exc:
+                result["verification_log_error"] = str(log_exc)
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -197,7 +317,7 @@ def save_enrollment():
         "seed_label": payload.get("seed_label") or "drawing_seed",
         "attempt_count": len(attempts) if isinstance(attempts, list) else 0,
         "attempts": attempts,
-        "analysis_result": result,
+        "analysis_result": _redact_for_logs(result),
         "accepted_for_demo": result.get("accepted_for_demo"),
         "stability_score": result.get("stability_score"),
         "recommended_profile": result.get("recommended_profile"),

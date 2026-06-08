@@ -82,8 +82,21 @@ function renderResult(r) {
   lines.push('Recommended profile: ' + r.recommended_profile);
   lines.push('Central attempt: ' + r.central_attempt);
   lines.push('Canonical token count: ' + r.canonical_token_count);
+  if (r.geometry_stability_score !== undefined) {
+    lines.push('Geometry stability: ' + Number(r.geometry_stability_score || 0).toFixed(3));
+  }
   lines.push('Warnings: ' + ((r.warnings || []).length ? r.warnings.join(', ') : 'none'));
+  if (r.fuzzy_enabled) {
+    lines.push('Fuzzy helper: enabled (prototype)');
+  }
   lines.push('');
+
+  if (r.enrollment_id) {
+    lines.push('Saved enrollment ID: ' + r.enrollment_id);
+  }
+  if (r.enrollment_log_error) {
+    lines.push('Enrollment log error: ' + r.enrollment_log_error);
+  }
 
   if (r.outputs) {
     lines.push('Seed hex: ' + r.outputs.seed_hex);
@@ -106,9 +119,22 @@ function renderUnlockSuccess(r) {
   const outputs = r.outputs || {};
   const lines = [];
   lines.push('ACCESS GRANTED');
-  lines.push('Similarity score: ' + Number(r.score || 0).toFixed(3));
-  lines.push('Threshold: ' + Number(r.threshold || 0).toFixed(3));
+  lines.push('Final score: ' + Number(r.final_score ?? r.score ?? 0).toFixed(3));
+  lines.push('Token score: ' + Number(r.token_score ?? r.score ?? 0).toFixed(3));
+  if (r.geometry_scores) {
+    lines.push('Layout score: ' + Number(r.geometry_scores.layout || 0).toFixed(3));
+    lines.push('Relation score: ' + Number(r.geometry_scores.relation || 0).toFixed(3));
+    lines.push('Curve score: ' + Number(r.geometry_scores.curve || 0).toFixed(3));
+    lines.push('Shape score: ' + Number(r.geometry_scores.stroke_shape || 0).toFixed(3));
+  }
+  lines.push('Token threshold: ' + Number(r.threshold || 0).toFixed(3));
   lines.push('Profile: ' + r.profile);
+  if (r.verification_id) lines.push('Logged verification ID: ' + r.verification_id);
+  if (r.verification_log_error) lines.push('Verification log error: ' + r.verification_log_error);
+  if (r.fuzzy_recovery) {
+    lines.push('Fuzzy recovery: ' + (r.fuzzy_recovery.ok ? 'OK' : 'FAILED'));
+    lines.push('Output source: ' + (r.output_source || 'unknown'));
+  }
   lines.push('');
   lines.push('The redraw matched the enrolled drawing seed profile.');
   verifyOut(lines.join('\n'), 'ok');
@@ -128,9 +154,25 @@ function renderUnlockSuccess(r) {
 function renderUnlockFailure(r) {
   const lines = [];
   lines.push('ACCESS DENIED');
-  lines.push('Similarity score: ' + Number(r.score || 0).toFixed(3));
-  lines.push('Threshold: ' + Number(r.threshold || 0).toFixed(3));
+  lines.push('Final score: ' + Number(r.final_score ?? r.score ?? 0).toFixed(3));
+  lines.push('Token score: ' + Number(r.token_score ?? r.score ?? 0).toFixed(3));
+  if (r.geometry_scores) {
+    lines.push('Layout score: ' + Number(r.geometry_scores.layout || 0).toFixed(3));
+    lines.push('Relation score: ' + Number(r.geometry_scores.relation || 0).toFixed(3));
+    lines.push('Curve score: ' + Number(r.geometry_scores.curve || 0).toFixed(3));
+    lines.push('Shape score: ' + Number(r.geometry_scores.stroke_shape || 0).toFixed(3));
+  }
+  lines.push('Token threshold: ' + Number(r.threshold || 0).toFixed(3));
   lines.push('Profile: ' + r.profile);
+  if (r.verification_id) lines.push('Logged verification ID: ' + r.verification_id);
+  if (r.verification_log_error) lines.push('Verification log error: ' + r.verification_log_error);
+  if (r.fuzzy_recovery) {
+    lines.push('Fuzzy recovery: ' + (r.fuzzy_recovery.ok ? 'OK' : 'FAILED'));
+    lines.push('Output source: ' + (r.output_source || 'none'));
+  }
+  if (r.failure_reasons && r.failure_reasons.length) {
+    lines.push('Failure reasons: ' + r.failure_reasons.join(', '));
+  }
   lines.push('');
   lines.push('Try redrawing the enrolled secret again.');
   verifyOut(lines.join('\n'), 'bad');
@@ -185,7 +227,11 @@ document.getElementById('analyze').onclick = async () => {
     }
     analysisResult = await postJson('/api/analyze_enrollment', {
       attempts,
-      domain: document.getElementById('domain').value
+      domain: document.getElementById('domain').value,
+      participant_id: pid.textContent,
+      seed_label: document.getElementById('seedLabel').value,
+      notes: document.getElementById('notes').value,
+      ui_version: 'seed-enrollment-codefreeze'
     });
     renderResult(analysisResult);
     setSteps();
@@ -203,7 +249,11 @@ document.getElementById('saveEnrollment').onclick = async () => {
     if (!analysisResult) {
       analysisResult = await postJson('/api/analyze_enrollment', {
         attempts,
-        domain: document.getElementById('domain').value
+        domain: document.getElementById('domain').value,
+        participant_id: pid.textContent,
+        seed_label: document.getElementById('seedLabel').value,
+        notes: document.getElementById('notes').value,
+        ui_version: 'seed-enrollment-codefreeze'
       });
       renderResult(analysisResult);
     }
@@ -258,8 +308,12 @@ document.getElementById('unlockVault').onclick = async () => {
 
     verifyResult = await postJson('/api/verify_redraw', {
       enrollment_result: analysisResult,
+      enrollment_id: analysisResult.enrollment_id || (analysisResult.enrollment_saved && analysisResult.enrollment_saved.id),
+      participant_id: pid.textContent,
+      seed_label: document.getElementById('seedLabel').value,
+      attempt_type: document.getElementById('attemptType').value,
       redraw_strokes: redrawStrokes,
-      threshold: 0.5
+      ui_version: 'seed-enrollment-codefreeze'
     });
 
     document.getElementById('verifyJson').textContent = JSON.stringify(verifyResult, null, 2);

@@ -102,3 +102,26 @@ The honest claim is:
 ## Safety note
 
 Do not collect names, signatures, initials, passwords, private symbols, or personal identifiers in drawings.
+
+## Code-freeze evaluation build
+
+This build includes:
+
+- soft direction-boundary allocation in the fuzzy feature projection layer;
+- minimum complexity rejection during enrollment;
+- locked BCH parameters for evaluation;
+- automatic Supabase logging for enrollments and verification attempts.
+
+Before deploying, run:
+
+```text
+sql/004_verification_attempts_schema.sql
+```
+
+Then set:
+
+```text
+VERIFICATION_TABLE=drawing_seed_verifications
+AUTO_LOG_ENROLLMENTS=1
+AUTO_LOG_VERIFICATIONS=1
+```

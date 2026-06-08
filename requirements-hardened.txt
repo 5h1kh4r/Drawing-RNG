@@ -1,0 +1,4 @@
+-r requirements.txt
+# Optional but recommended for the hardened fuzzy extractor.
+# If this fails to install on your platform, the code falls back to repetition-code mode.
+bchlib

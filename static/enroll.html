@@ -95,6 +95,16 @@
       <canvas id="verifyCanvas" width="1200" height="900"></canvas>
     </div>
 
+    <div class="field compact-field">
+      <label>Verification attempt type</label>
+      <select id="attemptType">
+        <option value="owner_test">Owner redraw / genuine attempt</option>
+        <option value="wrong_shape">Wrong shape test</option>
+        <option value="blind_impostor">Blind impostor</option>
+        <option value="informed_forgery">Informed forgery / copied from screenshot</option>
+      </select>
+    </div>
+
     <div class="toolbar">
       <button class="btn" id="verifyUndo">Undo</button>
       <button class="btn red" id="verifyClear">Clear</button>
