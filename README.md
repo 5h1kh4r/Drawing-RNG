@@ -1,127 +1,59 @@
-# Drawing-RNG
+# Drawing-RNG / Draw2Seed Public Demo
 
-**Drawing-RNG** is a research prototype for turning hand-drawn secrets into reusable deterministic seed material.
+This is the sanitized public demo build for Drawing-RNG / Draw2Seed.
 
-It does **not** claim production-grade cryptographic security. The project explores whether drawings can be used as a more human-friendly seed/password interface by replacing brittle pixel hashing with stroke-token encoding, repeated enrollment, and stability checks.
+It demonstrates a local, research-only flow for turning repeated freehand stroke gestures into a deterministic demo seed and then testing a redraw against that enrolled gesture.
 
-## Current project direction
+## What is included
 
-The project now has two separate workflows:
+- Flask public demo app
+- HTML5 canvas enrollment/redraw UI
+- Stroke-token encoder
+- Geometry/topology verifier
+- Complex-scene verifier
+- Seed Quality Score
+- Step-up component challenge flow
+- Timing/rhythm diagnostics
+- Use-case simulation cards
 
-1. **Prompt Doodle Collection** — collect prompt-based drawings to study which drawing categories are naturally stable or unstable.
-2. **Drawing Seed Enrollment** — ask a user to draw the same remembered secret multiple times, score redraw stability, and generate demo outputs.
+## What is intentionally not included
 
-The key idea is:
+- `/dev` console
+- Supabase database browser
+- dataset export/sync tools
+- evaluation reports/results
+- destructive delete/update utilities
+- service-role-key usage
+- private pilot data
 
-```text
-human drawing → captured strokes → stroke-token encoder → enrollment stability check → deterministic seed outputs
-```
-
-## What this repo includes
-
-```text
-app.py                         Flask backend
-static/                        Web pages for collection + seed enrollment
-src/drawing_rng/               Core encoder, enrollment, seed derivation modules
-sql/                           Supabase schemas
-tools/                         Dataset export/render/filter utilities
-experiments/                   Clean dataset analysis runner
-docs/                          Project notes and deployment guidance
-data/                          Empty local data folders, raw data is not committed
-```
-
-Generated datasets, raw volunteer drawings, rendered review images, and old experimental clutter have been intentionally removed.
-
-## Install locally
+## Run locally
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python app.py
 ```
 
-Open:
+Open `http://127.0.0.1:5000`.
 
-```text
-http://127.0.0.1:5000
-```
+## Optional public logging
 
-## Supabase setup
+Server-side logging is disabled by default. The app works without Supabase.
 
-For a clean setup, use a new Supabase project for the seed-enrollment workflow.
+To enable optional insert-only logging for your own demo instance, configure Supabase Row Level Security with insert-only policies and use an anon key, never a service-role key:
 
-Run these in Supabase SQL Editor:
-
-```text
-sql/001_prompt_collection_schema.sql      optional prompt doodle collection
-sql/002_seed_enrollment_schema.sql        seed enrollment records
-sql/003_clean_dataset_schema.sql          cleaned prompt dataset, if needed
-```
-
-Set environment variables on Render/local:
-
-```text
+```bash
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-PROMPT_TABLE=stroke_samples
-ENROLLMENT_TABLE=drawing_seed_enrollments
-```
-
-The service role key must stay server-side only. Never put it into frontend JavaScript.
-
-## Deploy on Render
-
-Use:
-
-```text
-Build command: pip install -r requirements.txt
-Start command: gunicorn app:app
-```
-
-Render Free is okay for hosting, because Supabase stores the actual records.
-
-## Main demo
-
-Go to `/enroll`:
-
-1. Draw the same secret attempt 1.
-2. Draw the same secret attempt 2.
-3. Draw the same secret attempt 3.
-4. Analyze enrollment.
-5. Drawing-RNG reports stability, recommended profile, warnings, seed hex, demo password, and avatar palette.
-
-## Research claim
-
-Drawing-RNG is not better than random seeds. It investigates whether hand-drawn secrets can be a more memorable interface than user-chosen text passwords when paired with enrollment and quality checks.
-
-The honest claim is:
-
-> Drawing-RNG turns hand-drawn secrets into deterministic seed material using stroke-token encoding and repeated enrollment. It can measure whether a drawing is stable enough for demo seed generation and warn when a drawing is unstable or likely weak.
-
-## Safety note
-
-Do not collect names, signatures, initials, passwords, private symbols, or personal identifiers in drawings.
-
-## Code-freeze evaluation build
-
-This build includes:
-
-- soft direction-boundary allocation in the fuzzy feature projection layer;
-- minimum complexity rejection during enrollment;
-- locked BCH parameters for evaluation;
-- automatic Supabase logging for enrollments and verification attempts.
-
-Before deploying, run:
-
-```text
-sql/004_verification_attempts_schema.sql
-```
-
-Then set:
-
-```text
-VERIFICATION_TABLE=drawing_seed_verifications
+SUPABASE_ANON_KEY=your-anon-key
+PUBLIC_ENABLE_SERVER_LOGGING=1
 AUTO_LOG_ENROLLMENTS=1
 AUTO_LOG_VERIFICATIONS=1
+python app.py
 ```
+
+The public build refuses to start if `SUPABASE_SERVICE_ROLE_KEY` is set.
+
+## Security note
+
+This is a research prototype, not production authentication. Do not use it to protect real accounts or secrets.
