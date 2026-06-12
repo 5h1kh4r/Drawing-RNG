@@ -57,7 +57,7 @@
     <aside class="panel">
       <div class="section-heading">
         <h2>Seed details</h2>
-        <p class="muted small">These labels are local demo metadata. Avoid personal or sensitive information.</p>
+        <p class="muted small">These labels are demo metadata. Public demo attempts are logged for the research dataset; avoid personal or sensitive information.</p>
       </div>
 
       <div class="participant">
@@ -82,12 +82,12 @@
 
       <label class="check-row" for="consent">
         <input id="consent" type="checkbox" checked>
-        <span>I understand this is a research prototype and should not protect real accounts or secrets.</span>
+        <span>I understand this is a research prototype, my demo strokes may be logged for the dataset, and I should not protect real accounts or secrets.</span>
       </label>
 
       <div class="toolbar">
         <button class="btn ghost" id="reset" type="button">Start over</button>
-        <button class="btn green" id="saveEnrollment" type="button" disabled>Optional server log</button>
+        <button class="btn green" id="saveEnrollment" type="button" disabled>Server log enabled</button>
       </div>
     </aside>
   </section>
@@ -110,7 +110,7 @@
       <div>
         <p class="eyebrow">Optional test</p>
         <h2>3. Redraw to unlock</h2>
-        <p class="muted small">Draw the enrolled symbol once more. A close match reveals deterministic demo outputs for this local session.</p>
+        <p class="muted small">Draw the enrolled symbol once more. The attempt is logged for the demo dataset when server logging is configured.</p>
       </div>
       <span id="vaultStatusPill" class="status-pill neutral">Waiting</span>
     </div>

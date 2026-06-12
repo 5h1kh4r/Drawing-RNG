@@ -60,7 +60,7 @@ function showVaultSection() {
   document.getElementById('vaultOutputs').classList.add('hidden');
   document.getElementById('verifyJson').textContent = '{}';
   setVaultPill('Ready', 'neutral');
-  verifyOut('Redraw the enrolled secret and click Unlock Vault.');
+  verifyOut('Redraw the enrolled seed and click Check Redraw.');
 }
 
 function hideVaultSection() {
@@ -485,7 +485,7 @@ document.getElementById('analyze').onclick = async () => {
       participant_id: pid.textContent,
       seed_label: document.getElementById('seedLabel').value,
       notes: document.getElementById('notes').value,
-      ui_version: 'seed-enrollment-codefreeze'
+      ui_version: 'public-demo-autolog-phase4-3'
     });
     renderResult(analysisResult);
     setSteps();
@@ -510,7 +510,7 @@ document.getElementById('analyze').onclick = async () => {
         participant_id: pid.textContent,
         seed_label: document.getElementById('seedLabel').value,
         notes: document.getElementById('notes').value,
-        ui_version: 'seed-enrollment-codefreeze'
+        ui_version: 'public-demo-autolog-phase4-3'
       });
       renderResult(analysisResult);
     }
@@ -521,13 +521,13 @@ document.getElementById('analyze').onclick = async () => {
       notes: document.getElementById('notes').value,
       attempts,
       result: analysisResult,
-      ui_version: 'seed-enrollment-phase2-vault-ui'
+      ui_version: 'public-demo-manual-save-phase4-3'
     });
     out(res.storage === 'disabled' ? 'Server logging disabled in the public demo. Enrollment remains available in this browser session.' : 'Enrollment saved. ' + JSON.stringify(res), 'ok');
   } catch (e) {
     out(e.message, 'bad');
   }
-};
+}; }
 
 // Vault / verify-redraw controls
 
@@ -536,7 +536,7 @@ document.getElementById('verifyClear').onclick = () => {
   v.clear();
   document.getElementById('verifyCanvasWrap').classList.remove('granted', 'denied', 'shake');
   setVaultPill('Ready', 'neutral');
-  verifyOut('Redraw the enrolled secret and click Unlock Vault.');
+  verifyOut('Redraw the enrolled seed and click Check Redraw.');
   document.getElementById('vaultOutputs').classList.add('hidden');
   hideStepUp();
 };
@@ -557,12 +557,12 @@ document.getElementById('unlockVault').onclick = async () => {
       return;
     }
     if (!redrawStrokes.length) {
-      verifyOut('Draw your secret again before unlocking.', 'bad');
+      verifyOut('Draw the enrolled seed again before checking.', 'bad');
       return;
     }
 
     setVaultPill('Checking…', 'neutral');
-    verifyOut('Checking redraw against enrolled profile...');
+    verifyOut('Checking redraw against enrolled profile and logging this attempt for the demo dataset...');
 
     verifyResult = await postJson('/api/verify_redraw', {
       enrollment_result: analysisResult,
@@ -571,7 +571,7 @@ document.getElementById('unlockVault').onclick = async () => {
       seed_label: document.getElementById('seedLabel').value,
       attempt_type: (document.getElementById('attemptType') ? document.getElementById('attemptType').value : 'owner_test'),
       redraw_strokes: redrawStrokes,
-      ui_version: 'seed-enrollment-codefreeze'
+      ui_version: 'public-demo-autolog-phase4-3'
     });
 
     document.getElementById('verifyJson').textContent = JSON.stringify(verifyResult, null, 2);

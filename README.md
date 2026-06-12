@@ -37,11 +37,11 @@ python app.py
 
 Open `http://127.0.0.1:5000`.
 
-## Optional public logging
+## Public demo logging
 
-Server-side logging is disabled by default. The app works without Supabase.
+This demo build is configured to log enrollment and verification attempts automatically when `SUPABASE_URL` and `SUPABASE_ANON_KEY` are present. It still works without Supabase; in that case, attempted logs fall back to local JSON files under `data/local_submissions/` for local testing.
 
-To enable optional insert-only logging for your own demo instance, configure Supabase Row Level Security with insert-only policies and use an anon key, never a service-role key:
+For a deployed public demo, configure Supabase Row Level Security with insert-only policies and use an anon key, never a service-role key:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
@@ -52,7 +52,7 @@ AUTO_LOG_VERIFICATIONS=1
 python app.py
 ```
 
-The public build refuses to start if `SUPABASE_SERVICE_ROLE_KEY` is set.
+The public build refuses to start if `SUPABASE_SERVICE_ROLE_KEY` is set. To disable logging intentionally, set `PUBLIC_ENABLE_SERVER_LOGGING=0`.
 
 ## Security note
 

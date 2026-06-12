@@ -32,14 +32,14 @@ LOCAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_PUBLIC_ANON_KEY")
-PUBLIC_ENABLE_SERVER_LOGGING = os.environ.get("PUBLIC_ENABLE_SERVER_LOGGING", "0") == "1"
+PUBLIC_ENABLE_SERVER_LOGGING = os.environ.get("PUBLIC_ENABLE_SERVER_LOGGING", "1") != "0"
 if os.environ.get("SUPABASE_SERVICE_ROLE_KEY"):
     raise RuntimeError("Public build refuses to start with SUPABASE_SERVICE_ROLE_KEY set. Use the dev build for service-role operations.")
 PROMPT_TABLE = os.environ.get("PROMPT_TABLE", "stroke_samples")
 ENROLLMENT_TABLE = os.environ.get("ENROLLMENT_TABLE", "drawing_seed_enrollments")
 VERIFICATION_TABLE = os.environ.get("VERIFICATION_TABLE", "drawing_seed_verifications")
-AUTO_LOG_ENROLLMENTS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_ENROLLMENTS", "0") == "1"
-AUTO_LOG_VERIFICATIONS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_VERIFICATIONS", "0") == "1"
+AUTO_LOG_ENROLLMENTS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_ENROLLMENTS", "1") != "0"
+AUTO_LOG_VERIFICATIONS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_VERIFICATIONS", "1") != "0"
 
 supabase = None
 if PUBLIC_ENABLE_SERVER_LOGGING and create_client and SUPABASE_URL and SUPABASE_ANON_KEY:
