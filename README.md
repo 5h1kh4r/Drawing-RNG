@@ -1,59 +1,61 @@
-# Drawing-RNG / Draw2Seed Public Demo
+# Draw2Seed Public Demo
 
-This is the sanitized public demo build for Drawing-RNG / Draw2Seed.
+This is the public, GitHub/Render-safe build of Drawing-RNG / Draw2Seed.
 
-It demonstrates a local, research-only flow for turning repeated freehand stroke gestures into a deterministic demo seed and then testing a redraw against that enrolled gesture.
+It contains only the user-facing enrollment and verification demo. It intentionally omits the local `/dev` console, dataset browser, delete tools, report generators, raw exports, and service-role workflows.
 
-## What is included
+## What this build does
 
-- Flask public demo app
-- HTML5 canvas enrollment/redraw UI
-- Stroke-token encoder
-- Geometry/topology verifier
-- Complex-scene verifier
-- Seed Quality Score
-- Step-up component challenge flow
-- Timing/rhythm diagnostics
-- Use-case simulation cards
+- Captures hand-drawn vector strokes from an HTML5 canvas.
+- Runs enrollment stability and Seed Quality Score analysis.
+- Verifies redraws through token, geometry, topology, scene, timing, and step-up logic.
+- Shows use-case simulation cards for vault unlock / deterministic secret derivation style flows.
+- Optionally logs public demo enrollments and verification attempts for dataset collection.
 
-## What is intentionally not included
+## Safety boundary
 
-- `/dev` console
-- Supabase database browser
-- dataset export/sync tools
-- evaluation reports/results
-- destructive delete/update utilities
-- service-role-key usage
-- private pilot data
+This public build must use the Supabase anon key only.
 
-## Run locally
+It refuses to start if `SUPABASE_SERVICE_ROLE_KEY` is present.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python app.py
+Server-side demo logging redacts reusable secret outputs before storage.
+
+## Render settings
+
+Root directory:
+
+```text
+public
 ```
 
-Open `http://127.0.0.1:5000`.
-
-## Public demo logging
-
-This demo build is configured to log enrollment and verification attempts automatically when `SUPABASE_URL` and `SUPABASE_ANON_KEY` are present. It still works without Supabase; in that case, attempted logs fall back to local JSON files under `data/local_submissions/` for local testing.
-
-For a deployed public demo, configure Supabase Row Level Security with insert-only policies and use an anon key, never a service-role key:
+Build command:
 
 ```bash
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
+pip install -r requirements.txt
+```
+
+Start command:
+
+```bash
+gunicorn app:app
+```
+
+Environment variables:
+
+```text
+SUPABASE_URL=...
+SUPABASE_ANON_KEY=...
 PUBLIC_ENABLE_SERVER_LOGGING=1
 AUTO_LOG_ENROLLMENTS=1
 AUTO_LOG_VERIFICATIONS=1
-python app.py
 ```
 
-The public build refuses to start if `SUPABASE_SERVICE_ROLE_KEY` is set. To disable logging intentionally, set `PUBLIC_ENABLE_SERVER_LOGGING=0`.
+Do not set:
 
-## Security note
+```text
+SUPABASE_SERVICE_ROLE_KEY
+```
 
-This is a research prototype, not production authentication. Do not use it to protect real accounts or secrets.
+## Supabase policy
+
+Use `sql/public_insert_only_schema.sql` as the public logging baseline. The public anon role should be insert-only for demo tables. Do not grant public select/update/delete.
