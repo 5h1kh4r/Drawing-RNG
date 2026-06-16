@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Drawing-RNG</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="container">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">Research prototype</p>
+      <h1>Drawing-RNG</h1>
+      <p>Explore whether a repeatable hand-drawn symbol can become deterministic seed material without relying on brittle pixel matching.</p>
+    </div>
+    <span class="badge">Do not use for real account security</span>
+  </header>
+  <section class="cards">
+    <article class="card">
+      <p class="eyebrow">Main demo</p>
+      <h2>Create a drawing seed</h2>
+      <p class="muted">Repeat one memorable drawing three times, measure its stability, and test whether a later redraw can unlock the same outputs.</p>
+      <a class="btn primary" href="/enroll">Start enrollment</a>
+    </article>
+    <article class="card">
+      <p class="eyebrow">Research data</p>
+      <h2>Collect prompt doodles</h2>
+      <p class="muted">Capture anonymous prompt-based drawings to study which kinds of shapes people reproduce consistently.</p>
+      <a class="btn" href="/collect">Open collection tool</a>
+    </article>
+    <article class="card">
+      <p class="eyebrow">Private tooling</p>
+      <h2>Review verification data</h2>
+      <p class="muted">Inspect enrollments and individual verification attempts, including stored drawings and score breakdowns.</p>
+      <a class="btn" href="/dev">Open dev console</a>
+    </article>
+    <article class="card">
+      <p class="eyebrow">Conference demo</p>
+      <h2>Use-case simulator</h2>
+      <p class="muted">After enrollment and verification, show how the same verifier result maps to vault unlock, site-password derivation, recovery, and adaptive challenges.</p>
+      <a class="btn" href="/enroll#useCaseSection">Run simulator</a>
+    </article>
+  </section>
+  <section class="panel" style="margin-top:20px">
+    <div class="section-heading"><h2>How the prototype works</h2><p class="muted">The system compares captured stroke structure, geometry, and redraw consistency before deriving demo outputs.</p></div>
+    <div class="steps" aria-label="System overview">
+      <span class="step active">Capture strokes</span>
+      <span class="step active">Compare redraws</span>
+      <span class="step active">Score stability</span>
+      <span class="step active">Derive output</span>
+    </div>
+  </section>
+</main>
+</body>
+</html>
+

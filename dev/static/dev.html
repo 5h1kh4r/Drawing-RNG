@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Drawing-RNG Dev Console</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .dev-layout{display:grid;grid-template-columns:minmax(270px,340px) minmax(0,1fr);gap:20px;align-items:start}
+    .sticky-panel{position:sticky;top:18px}
+    .listbox{max-height:68vh;overflow:auto;border:1px solid var(--border);border-radius:16px;background:var(--panel-muted)}
+    .empty-state{padding:28px 16px;color:var(--muted);text-align:center}
+    .rowitem{width:100%;display:block;border:0;border-bottom:1px solid var(--border);padding:12px;background:transparent;color:inherit;text-align:left;cursor:pointer}
+    .rowitem:last-child{border-bottom:0}.rowitem:hover,.rowitem.active{background:#13233a}.rowitem.active{box-shadow:inset 3px 0 0 var(--accent)}
+    .rowitem strong{display:block;color:var(--text);font-size:.83rem;line-height:1.35}.rowitem span{display:block;margin-top:4px;color:var(--muted);font-size:.73rem;line-height:1.35}
+    .preview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-top:12px}
+    .preview-card{border:1px solid var(--border);border-radius:14px;padding:10px;background:var(--panel-muted)}
+    .preview-card canvas{width:100%;height:150px;border-radius:10px;background:#fbfdff}
+    .verification-list{display:grid;gap:9px}.verification-row{display:grid;grid-template-columns:minmax(160px,1.2fr) repeat(2,minmax(90px,.65fr)) auto;gap:12px;align-items:center;border:1px solid var(--border);border-radius:14px;padding:11px 12px;background:var(--panel-muted)}
+    .verification-row:hover{border-color:var(--border-strong)}.verification-row strong{display:block;font-size:.83rem}.verification-row .meta{color:var(--muted);font-size:.72rem}.verification-row .score{font: .75rem ui-monospace,SFMono-Regular,Consolas,monospace}.verification-actions{display:flex;gap:7px}
+    .detail-grid{display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.1fr);gap:18px}.detail-preview{border:1px solid #c9d6e5;border-radius:16px;overflow:hidden;background:#fbfdff}.detail-preview canvas{width:100%;min-height:260px}.metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.metric{border:1px solid var(--border);border-radius:12px;padding:10px;background:var(--panel-muted)}.metric span{display:block;color:var(--muted);font-size:.7rem}.metric strong{font: .95rem ui-monospace,SFMono-Regular,Consolas,monospace}
+    .tiny{font-size:.72rem;color:var(--muted)}.danger-zone{margin-top:22px}
+    @media(max-width:980px){.dev-layout,.detail-grid{grid-template-columns:1fr}.sticky-panel{position:static}.listbox{max-height:360px}}
+    @media(max-width:720px){.verification-row{grid-template-columns:1fr 1fr}.verification-row>div:first-child,.verification-actions{grid-column:1/-1}.verification-actions .btn{flex:1}.metric-grid{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+<main class="container">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">Private tooling</p>
+      <h1>Verification console</h1>
+      <p>Review stored enrollments, inspect individual verification drawings, register new attempts, and maintain evaluation records.</p>
+    </div>
+    <div class="toolbar">
+      <a class="btn ghost" href="/enroll">Enrollment demo</a>
+      <button class="btn primary" id="refreshAll" type="button">Refresh data</button>
+    </div>
+  </header>
+
+  <section class="dev-layout">
+    <aside class="panel sticky-panel">
+      <div class="section-heading">
+        <h2>Enrollments</h2>
+        <p class="muted small">Select a record to inspect its attempts.</p>
+      </div>
+      <div class="field">
+        <label for="search">Search records</label>
+        <input id="search" type="search" placeholder="Label, participant, or ID">
+      </div>
+      <div id="enrollmentList" class="listbox" aria-live="polite">Loading enrollments...</div>
+    </aside>
+
+    <div>
+      <section class="panel">
+        <div class="panel-headline">
+          <div>
+            <p class="eyebrow">Selected enrollment</p>
+            <h2 id="selectedTitle">Choose an enrollment</h2>
+            <p class="muted small" id="selectedMeta">Select a stored record from the list.</p>
+          </div>
+          <span class="status-pill neutral" id="selectedStatus">Idle</span>
+        </div>
+        <div id="enrollmentPreviews" class="preview-grid"></div>
+      </section>
+
+      <section class="panel" style="margin-top:20px">
+        <div class="section-heading">
+          <h2>Register a verification attempt</h2>
+          <p class="muted small">Draw against the selected enrollment. The result will be logged to Supabase.</p>
+        </div>
+
+        <div class="field">
+          <label for="testerId">Tester / participant ID</label>
+          <input id="testerId" value="dev_tester">
+        </div>
+        <div class="field compact-field">
+          <label for="attemptType">Attempt type</label>
+          <select id="attemptType">
+            <option value="owner_test">Owner redraw / genuine attempt</option>
+            <option value="blind_impostor">Blind impostor</option>
+            <option value="informed_forgery">Informed forgery / copied from screenshot</option>
+            <option value="wrong_shape">Wrong shape</option>
+            <option value="near_miss">Near miss</option>
+            <option value="concept_variant">Concept variant / stress test</option>
+            <option value="true_wrong_shape">True wrong shape</option>
+            <option value="bad_sample">Bad sample</option>
+            <option value="ambiguous">Ambiguous / exclude</option>
+          </select>
+        </div>
+
+        <div class="canvas-wrap vault-canvas-wrap" id="devCanvasWrap">
+          <canvas id="verifyCanvas" width="1200" height="900" aria-label="Verification drawing area"></canvas>
+        </div>
+        <div class="canvas-meta"><span id="verifyCount">0 strokes</span><span>New verification attempt</span></div>
+        <div class="toolbar">
+          <button class="btn ghost" id="undo" type="button">Undo stroke</button>
+          <button class="btn red" id="clear" type="button">Clear canvas</button>
+          <span class="spacer"></span>
+          <button class="btn green primary-action" id="submitVerification" type="button">Verify and log</button>
+        </div>
+        <pre class="output" id="verifyOutput" style="margin-top:14px" role="status">Select an enrollment, then draw a verification attempt.</pre>
+      </section>
+
+      <section class="panel" style="margin-top:20px">
+        <div class="section-heading">
+          <h2>Stored verification attempts</h2>
+          <p class="muted small">Open any attempt to inspect its drawing and full score breakdown.</p>
+        </div>
+        <div id="verificationList" class="verification-list"><div class="empty-state">No enrollment selected.</div></div>
+      </section>
+
+      <section class="panel hidden" id="verificationDetail" style="margin-top:20px">
+        <div class="panel-headline">
+          <div>
+            <p class="eyebrow">Verification detail</p>
+            <h2 id="detailTitle">Verification attempt</h2>
+            <p class="muted small" id="detailMeta"></p>
+          </div>
+          <span class="status-pill neutral" id="detailStatus">Unknown</span>
+        </div>
+
+        <div class="detail-grid">
+          <div class="detail-preview"><canvas id="detailCanvas" width="600" height="420"></canvas></div>
+          <div>
+            <div class="field">
+              <label for="detailAttemptType">Attempt type</label>
+              <div class="inline-field">
+                <select id="detailAttemptType">
+                  <option value="owner_test">Owner redraw / genuine attempt</option>
+                  <option value="blind_impostor">Blind impostor</option>
+                  <option value="informed_forgery">Informed forgery / copied from screenshot</option>
+                  <option value="wrong_shape">Wrong shape</option>
+                  <option value="near_miss">Near miss</option>
+                  <option value="concept_variant">Concept variant / stress test</option>
+                  <option value="true_wrong_shape">True wrong shape</option>
+                  <option value="bad_sample">Bad sample</option>
+                  <option value="ambiguous">Ambiguous / exclude</option>
+            <option value="concept_variant">Concept variant / stress test</option>
+            <option value="true_wrong_shape">True wrong shape</option>
+            <option value="bad_sample">Bad sample</option>
+            <option value="ambiguous">Ambiguous / exclude</option>
+                </select>
+                <button class="btn primary" id="updateAttemptType" type="button">Update type</button>
+              </div>
+            </div>
+            <div id="detailMetrics" class="metric-grid"></div>
+            <details style="margin-top:16px">
+              <summary>Full stored record</summary>
+              <pre class="output" id="detailJson">{}</pre>
+            </details>
+            <div class="toolbar">
+              <button class="btn red" id="deleteVerification" type="button">Delete this verification</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel danger-zone">
+        <div class="section-heading">
+          <h2>Delete enrollment</h2>
+          <p class="muted small">This permanently removes the selected enrollment and all linked verification attempts.</p>
+        </div>
+        <button class="btn red" id="deleteEnrollment" type="button">Delete enrollment and linked verifications</button>
+      </section>
+    </div>
+  </section>
+</main>
+<script src="/shared.js"></script>
+<script src="/dev.js"></script>
+</body>
+</html>

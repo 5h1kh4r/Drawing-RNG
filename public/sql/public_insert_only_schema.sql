@@ -1,0 +1,17 @@
+-- Optional public-demo schema notes.
+-- Use only if you intentionally enable PUBLIC_ENABLE_SERVER_LOGGING=1.
+-- Configure Row Level Security so the anon key can INSERT only and cannot SELECT, UPDATE, or DELETE rows.
+-- The exact production schema may differ; keep this file as a starting point, not a migration for private research tables.
+
+-- Example policy shape, adapt to your actual tables:
+-- alter table public.drawing_seed_enrollments enable row level security;
+-- create policy "public_demo_insert_enrollments"
+-- on public.drawing_seed_enrollments for insert
+-- to anon
+-- with check (true);
+--
+-- alter table public.drawing_seed_verifications enable row level security;
+-- create policy "public_demo_insert_verifications"
+-- on public.drawing_seed_verifications for insert
+-- to anon
+-- with check (true);

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Drawing-RNG Collection</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="container">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">Anonymous research collection</p>
+      <h1>Prompt doodle study</h1>
+      <p>Draw the requested concept naturally. Do not include names, signatures, initials, passwords, or private symbols.</p>
+    </div>
+    <a class="btn ghost" href="/">Back to home</a>
+  </header>
+  <section class="grid">
+    <div class="panel">
+      <div class="section-heading"><h2>Draw the prompt</h2><p class="muted small">A quick, natural doodle is more useful than a carefully polished one.</p></div>
+      <div class="prompt-box"><span>Current prompt</span><strong id="promptText">star</strong></div>
+      <div class="canvas-wrap"><canvas id="canvas" width="1200" height="900" aria-label="Prompt drawing area"></canvas></div>
+      <div class="canvas-meta"><span id="count">0 strokes</span><span>Anonymous sample</span></div>
+      <div class="toolbar">
+        <button class="btn ghost" id="undo" type="button">Undo stroke</button>
+        <button class="btn red" id="clear" type="button">Clear canvas</button>
+        <span class="spacer"></span>
+        <button class="btn" id="tokenize" type="button">Preview tokens</button>
+        <button class="btn green primary-action" id="save" type="button">Save sample</button>
+      </div>
+    </div>
+    <aside class="panel">
+      <div class="section-heading"><h2>Label the sample</h2><p class="muted small">These fields help group the research data.</p></div>
+      <div class="participant"><span><span class="muted small">Anonymous participant</span><b id="pid"></b></span><button class="btn ghost small-btn" id="newPid" type="button">Regenerate</button></div>
+      <div class="field"><label for="concept">Prompt / concept</label><select id="concept"><option>star</option><option>heart</option><option>spiral</option><option>triangle</option><option>stickman</option><option>flower</option><option>house_lake</option><option>custom_symbol</option></select></div>
+      <div class="field"><label for="redraw">Redraw number</label><input id="redraw" type="number" min="1" value="1"></div>
+      <div class="field"><label for="notes">Notes <span class="muted">(optional)</span></label><textarea id="notes" placeholder="Device, mouse or touch, or anything unusual."></textarea></div>
+      <label class="check-row" for="consent"><input id="consent" type="checkbox" checked><span>I understand this saves anonymous drawing strokes for research and demo analysis.</span></label>
+      <div id="status" class="output" role="status">Ready for a drawing.</div>
+    </aside>
+  </section>
+</main>
+<script src="/shared.js"></script>
+<script src="/collect.js"></script>
+</body>
+</html>
+
