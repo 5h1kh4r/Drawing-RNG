@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Drawing-RNG Enrollment</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="container">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">Drawing-RNG prototype</p>
+      <h1>Create a drawing seed</h1>
+      <p>Draw one memorable symbol three times. We will compare the attempts, measure consistency, and create deterministic demo outputs.</p>
+    </div>
+    <span class="badge">Research demo, not production security</span>
+  </header>
+
+  <section class="grid">
+    <div class="panel">
+      <div class="section-heading">
+        <h2>1. Repeat your drawing</h2>
+        <p class="muted small">Use the same shape, stroke order, and rough placement each time. It does not need to be pixel-perfect.</p>
+      </div>
+
+      <div class="steps" aria-label="Enrollment progress">
+        <span class="step active" id="s1">Attempt 1</span>
+        <span class="step" id="s2">Attempt 2</span>
+        <span class="step" id="s3">Attempt 3</span>
+        <span class="step" id="s4">Analyze</span>
+      </div>
+
+      <div class="prompt-box">
+        <span>Current task</span>
+        <strong id="currentTask">Draw attempt 1 of 3</strong>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="canvas" width="1200" height="900" aria-label="Drawing area"></canvas>
+      </div>
+
+      <div class="canvas-meta">
+        <span id="count">0 strokes</span>
+        <span>Saved: <b id="attemptCount">0</b> / 3</span>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn ghost" id="undo" type="button">Undo stroke</button>
+        <button class="btn red" id="clear" type="button">Clear canvas</button>
+        <span class="spacer"></span>
+        <button class="btn primary primary-action" id="saveAttempt" type="button">Save attempt 1</button>
+        <button class="btn green primary-action" id="analyze" type="button" disabled>Analyze drawings</button>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="section-heading">
+        <h2>Seed details</h2>
+        <p class="muted small">These labels are demo metadata. Public demo attempts are logged for the research dataset; avoid personal or sensitive information.</p>
+      </div>
+
+      <div class="participant">
+        <span><span class="muted small">Anonymous participant</span><b id="pid"></b></span>
+        <button class="btn ghost small-btn" id="newPid" type="button">Regenerate</button>
+      </div>
+
+      <div class="field">
+        <label for="seedLabel">Seed label</label>
+        <input id="seedLabel" value="my_drawing_seed" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="domain">Demo domain or app</label>
+        <input id="domain" value="github.com" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="notes">Notes <span class="muted">(optional)</span></label>
+        <textarea id="notes" placeholder="Device, drawing strategy, or anything useful for the study."></textarea>
+      </div>
+
+      <label class="check-row" for="consent">
+        <input id="consent" type="checkbox" checked>
+        <span>I understand this is a research prototype, my demo strokes may be logged for the dataset, and I should not protect real accounts or secrets.</span>
+      </label>
+
+      <div class="toolbar">
+        <button class="btn ghost" id="reset" type="button">Start over</button>
+        <button class="btn green" id="saveEnrollment" type="button" disabled>Server log enabled</button>
+      </div>
+    </aside>
+  </section>
+
+  <section class="panel" style="margin-top:20px">
+    <div class="section-heading">
+      <h2>2. Review the result</h2>
+      <p class="muted small">After three attempts, analyze how consistently you reproduced the drawing.</p>
+    </div>
+    <div id="result" class="output" role="status">Save three drawing attempts to continue.</div>
+    <div id="palette" class="palette" style="margin-top:14px"></div>
+    <details style="margin-top:14px">
+      <summary>Technical result</summary>
+      <pre id="jsonResult" class="output">{}</pre>
+    </details>
+  </section>
+
+  <section class="panel hidden" id="vaultSection" style="margin-top:20px">
+    <div class="panel-headline">
+      <div>
+        <p class="eyebrow">Optional test</p>
+        <h2>3. Redraw to unlock</h2>
+        <p class="muted small">Draw the enrolled symbol once more. The attempt is logged for the demo dataset when server logging is configured.</p>
+      </div>
+      <span id="vaultStatusPill" class="status-pill neutral">Waiting</span>
+    </div>
+
+    <div id="verifyCanvasWrap" class="canvas-wrap vault-canvas-wrap">
+      <canvas id="verifyCanvas" width="1200" height="900" aria-label="Verification drawing area"></canvas>
+    </div>
+    <div class="canvas-meta"><span id="verifyCount">0 strokes</span><span>Verification redraw</span></div>
+
+    <div class="toolbar">
+      <button class="btn ghost" id="verifyUndo" type="button">Undo stroke</button>
+      <button class="btn red" id="verifyClear" type="button">Clear canvas</button>
+      <span class="spacer"></span>
+      <button class="btn green primary-action" id="unlockVault" type="button">Check redraw</button>
+    </div>
+
+    <div id="verifyResult" class="output" style="margin-top:14px" role="status">Draw the enrolled symbol and check the redraw.</div>
+
+    <div id="stepUpSection" class="step-up-box hidden" style="margin-top:14px">
+      <div class="panel-headline compact-headline">
+        <div>
+          <p class="eyebrow">Step-up challenge</p>
+          <h3>Confirm one remembered component</h3>
+          <p id="stepUpPrompt" class="muted small">Redraw only the requested component. The enrolled image is not shown.</p>
+        </div>
+        <span id="stepUpStatusPill" class="status-pill neutral">Required</span>
+      </div>
+      <div class="canvas-wrap step-canvas-wrap">
+        <canvas id="stepCanvas" width="1200" height="900" aria-label="Step-up component drawing area"></canvas>
+      </div>
+      <div class="canvas-meta"><span id="stepCount">0 strokes</span><span>Component redraw only</span></div>
+      <div class="toolbar">
+        <button class="btn ghost" id="stepUndo" type="button">Undo stroke</button>
+        <button class="btn red" id="stepClear" type="button">Clear component</button>
+        <span class="spacer"></span>
+        <button class="btn green primary-action" id="submitStepUp" type="button">Submit component</button>
+      </div>
+      <div id="stepUpResult" class="output" style="margin-top:14px" role="status">Waiting for component redraw.</div>
+    </div>
+
+    <div id="vaultOutputs" class="vault-output hidden">
+      <h3>Unlocked demo outputs</h3>
+      <div class="secret-grid">
+        <div><span class="muted small">Domain</span><code id="unlockDomain">-</code></div>
+        <div><span class="muted small">Demo password</span><code id="unlockPassword">-</code></div>
+        <div><span class="muted small">Seed hex</span><code id="unlockSeed">-</code></div>
+      </div>
+      <div id="unlockPalette" class="palette" style="margin-top:14px"></div>
+    </div>
+
+    <details style="margin-top:14px">
+      <summary>Technical verification result</summary>
+      <pre id="verifyJson" class="output">{}</pre>
+    </details>
+  </section>
+
+  <section class="panel hidden" id="useCaseSection" style="margin-top:20px">
+    <div class="panel-headline">
+      <div>
+        <p class="eyebrow">Use-case simulation</p>
+        <h2>4. What would this result do in a product?</h2>
+        <p class="muted small">These are non-production simulations that map the verifier output to possible security workflows for the final demo.</p>
+      </div>
+      <span id="useCaseStatusPill" class="status-pill neutral">Waiting</span>
+    </div>
+    <div id="useCaseSummary" class="usecase-summary muted small">Run a redraw check to populate the simulations.</div>
+    <div id="useCaseGrid" class="usecase-grid" style="margin-top:14px"></div>
+    <details style="margin-top:14px">
+      <summary>Use-case simulation details</summary>
+      <pre id="useCaseJson" class="output">{}</pre>
+    </details>
+  </section>
+
+</main>
+<script src="/shared.js"></script>
+<script src="/enroll.js"></script>
+</body>
+</html>
