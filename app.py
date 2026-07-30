@@ -118,7 +118,7 @@ def _insert_supabase(table: str, row: Dict[str, Any]) -> str | None:
         return None
     payload = dict(row)
     payload.setdefault("id", str(uuid4()))
-    supabase.table(table).insert(payload).execute()
+    supabase.table(table).insert(payload, returning="minimal").execute()
     return str(payload["id"])
 
 
@@ -162,7 +162,7 @@ def _ensure_participant(payload: Dict[str, Any]) -> None:
         "collection_session": payload.get("collection_session"),
     }
     try:
-        supabase.table(PARTICIPANT_TABLE).insert(row).execute()
+        supabase.table(PARTICIPANT_TABLE).insert(row, returning="minimal").execute()
     except Exception as exc:
         message = str(exc)
         if "23505" not in message and "duplicate key" not in message.lower():
