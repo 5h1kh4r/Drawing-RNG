@@ -38,6 +38,53 @@ function setupCanvas(canvas, countEl){
   return{get:()=>strokes,set:(v)=>{strokes=v||[];current=null;redraw()},clear:()=>{strokes=[];current=null;redraw()},undo:()=>{strokes.pop();redraw()},redraw};
 }
 async function postJson(url, body){
-  const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data=await res.json();if(!res.ok)throw new Error(data.error||'Request failed');return data;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+
+  const raw = await res.text();
+  let data = {};
+
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    const preview = raw.slice(0, 220).replace(/\s+/g, ' ');
+    throw new Error(`HTTP ${res.status} returned non-JSON: ${preview}`);
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed with HTTP ${res.status}`);
+  }
+
+  return data;
 }
+
+
+/* DRAW2SEED_SIMPLE_PUBLIC_OVERRIDE */
+postJson = async function(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+
+  const raw = await response.text();
+  let data;
+
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    throw new Error(
+      `Server returned HTTP ${response.status} instead of JSON.`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed: HTTP ${response.status}`);
+  }
+
+  return data;
+};
+/* DRAW2SEED_SIMPLE_PUBLIC_OVERRIDE */
