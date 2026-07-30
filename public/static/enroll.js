@@ -634,3 +634,168 @@ try {
     }
   }
 } catch (_) {}
+
+
+/* DRAW2SEED_SIMPLE_COLLECTION_OVERRIDE */
+
+studyMetadata = function() {
+  const type =
+    document.getElementById('attemptType')?.value || 'owner_test';
+
+  return {
+    participant_role: 'participant',
+    consent_version: 'v2-consent-2026-07',
+    collection_session:
+      'public_' + new Date().toISOString().slice(0, 10),
+    device_type:
+      navigator.maxTouchPoints > 0 ? 'touchscreen' : 'unknown',
+    input_method: 'pointer',
+    observation_mode:
+      ['informed_forgery', 'near_miss'].includes(type)
+        ? 'static_preview'
+        : 'none',
+    practice_allowed: false,
+    practice_attempts: 0
+  };
+};
+
+renderResult = function(result) {
+  analysisResult = result;
+
+  localStorage.setItem(
+    'drng_last_enrollment_result',
+    JSON.stringify(result)
+  );
+
+  const message = [
+    'Enrollment saved.',
+    `Stability: ${Number(result.stability_score || 0).toFixed(3)}`,
+    result.enrollment_id
+      ? `Enrollment ID: ${result.enrollment_id}`
+      : 'Database save failed or logging is disabled.'
+  ];
+
+  if (result.enrollment_log_error) {
+    message.push(`Database error: ${result.enrollment_log_error}`);
+  }
+
+  out(message.join('\n'), result.enrollment_id ? 'ok' : 'warn');
+
+  if (typeof showVaultSection === 'function') {
+    showVaultSection();
+  }
+
+  for (const id of ['vaultSection', 'verifySection', 'verificationSection']) {
+    const section = document.getElementById(id);
+    if (section) {
+      section.hidden = false;
+      section.style.display = '';
+    }
+  }
+};
+
+renderUnlockSuccess = function(result) {
+  verifyOut(
+    result.verification_id
+      ? `Accepted and saved.\nVerification ID: ${result.verification_id}`
+      : 'Accepted, but database logging failed.',
+    result.verification_id ? 'ok' : 'warn'
+  );
+
+  if (result.verification_log_error) {
+    verifyOut(`Database error: ${result.verification_log_error}`, 'warn');
+  }
+};
+
+renderUnlockFailure = function(result) {
+  const lines = [
+    'Rejected, but the attempt was still recorded.',
+    result.verification_id
+      ? `Verification ID: ${result.verification_id}`
+      : 'Database logging failed.'
+  ];
+
+  if (result.failure_reasons?.length) {
+    lines.push(`Reason: ${result.failure_reasons.join(', ')}`);
+  }
+
+  if (result.verification_log_error) {
+    lines.push(`Database error: ${result.verification_log_error}`);
+  }
+
+  verifyOut(lines.join('\n'), result.verification_id ? 'bad' : 'warn');
+};
+
+function initialiseSimpleCollectionUi() {
+  const hiddenIds = [
+    'domain',
+    'participantRole',
+    'deviceType',
+    'collectionSession',
+    'notes',
+    'saveEnrollment',
+    'actorPid',
+    'observationMode',
+    'practiceAttempts',
+    'practiceAllowed',
+    'palette',
+    'jsonResult',
+    'verifyJson',
+    'vaultOutputs'
+  ];
+
+  for (const id of hiddenIds) {
+    const element = document.getElementById(id);
+    if (!element) continue;
+
+    const container =
+      element.closest('.field') ||
+      element.closest('label') ||
+      element.closest('details') ||
+      element;
+
+    container.style.display = 'none';
+  }
+
+  const useCases = document.getElementById('useCaseSection');
+  if (useCases) useCases.style.display = 'none';
+
+  const actor = document.getElementById('actorPid');
+  const type = document.getElementById('attemptType');
+
+  function syncActor() {
+    if (!actor || !type) return;
+
+    if (type.value === 'owner_test') {
+      actor.value = pid.textContent;
+      return;
+    }
+
+    let attacker =
+      sessionStorage.getItem('draw2seed_attacker_participant');
+
+    if (!attacker) {
+      attacker = `attacker_${crypto.randomUUID().slice(0, 8)}`;
+      sessionStorage.setItem(
+        'draw2seed_attacker_participant',
+        attacker
+      );
+    }
+
+    actor.value = attacker;
+  }
+
+  type?.addEventListener('change', syncActor);
+  syncActor();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener(
+    'DOMContentLoaded',
+    initialiseSimpleCollectionUi
+  );
+} else {
+  initialiseSimpleCollectionUi();
+}
+
+/* DRAW2SEED_SIMPLE_COLLECTION_OVERRIDE */
