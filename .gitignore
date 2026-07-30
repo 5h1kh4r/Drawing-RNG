@@ -1,0 +1,5 @@
+
+DRAW2SEED_V1_COMMIT.txt
+dev/results/
+**/__pycache__/
+*.v1-backup

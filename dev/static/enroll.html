@@ -74,6 +74,28 @@
         <label for="domain">Demo domain or app</label>
         <input id="domain" value="github.com" autocomplete="off">
       </div>
+      <div class="field">
+        <label for="participantRole">Participant role</label>
+        <select id="participantRole">
+          <option value="participant" selected>Participant</option>
+          <option value="researcher">Researcher / project author</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="deviceType">Input device</label>
+        <select id="deviceType">
+          <option value="mouse">Mouse</option>
+          <option value="touchpad" selected>Touchpad</option>
+          <option value="touchscreen">Touchscreen</option>
+          <option value="stylus">Stylus</option>
+          <option value="unknown">Other / unknown</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="collectionSession">Collection session</label>
+        <input id="collectionSession" value="college_v2_session_01">
+      </div>
+
 
       <div class="field">
         <label for="notes">Notes <span class="muted">(optional)</span></label>
@@ -120,18 +142,41 @@
     </div>
     <div class="canvas-meta"><span id="verifyCount">0 strokes</span><span>Verification redraw</span></div>
 
+
+    <div class="field compact-field">
+      <label for="actorPid">Person drawing this attempt</label>
+      <input id="actorPid" autocomplete="off">
+    </div>
     <div class="field compact-field">
       <label for="attemptType">Verification attempt type</label>
       <select id="attemptType">
-        <option value="owner_test">Owner redraw / genuine attempt</option>
-        <option value="wrong_shape">Wrong shape test</option>
-        <option value="near_miss">Near miss / concept variant</option>
-        <option value="concept_variant">Concept variant / close wrong-shape</option>
-        <option value="true_wrong_shape">True wrong shape</option>
+        <option value="owner_test">Owner redraw</option>
         <option value="blind_impostor">Blind impostor</option>
-        <option value="informed_forgery">Informed forgery / copied from screenshot</option>
+        <option value="informed_forgery">Informed forgery</option>
+        <option value="near_miss">Near miss</option>
+        <option value="true_wrong_shape">True wrong shape</option>
+        <option value="bad_sample">Bad sample</option>
       </select>
     </div>
+    <div class="field compact-field">
+      <label for="observationMode">Target visibility</label>
+      <select id="observationMode">
+        <option value="none">Not shown</option>
+        <option value="static_preview">Static preview</option>
+        <option value="live_observation">Observed live</option>
+        <option value="video">Video</option>
+        <option value="unknown">Unknown</option>
+      </select>
+    </div>
+    <div class="field compact-field">
+      <label for="practiceAttempts">Practice attempts</label>
+      <input id="practiceAttempts" type="number" min="0" value="0">
+    </div>
+    <label class="check-row" for="practiceAllowed">
+      <input id="practiceAllowed" type="checkbox">
+      <span>Practice was allowed.</span>
+    </label>
+
 
     <div class="toolbar">
       <button class="btn ghost" id="verifyUndo" type="button">Undo stroke</button>
