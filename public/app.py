@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+from uuid import uuid4
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
@@ -36,8 +38,13 @@ PUBLIC_ENABLE_SERVER_LOGGING = os.environ.get("PUBLIC_ENABLE_SERVER_LOGGING", "1
 if os.environ.get("SUPABASE_SERVICE_ROLE_KEY"):
     raise RuntimeError("Public build refuses to start with SUPABASE_SERVICE_ROLE_KEY set. Use the dev build for service-role operations.")
 PROMPT_TABLE = os.environ.get("PROMPT_TABLE", "stroke_samples")
-ENROLLMENT_TABLE = os.environ.get("ENROLLMENT_TABLE", "drawing_seed_enrollments")
-VERIFICATION_TABLE = os.environ.get("VERIFICATION_TABLE", "drawing_seed_verifications")
+PARTICIPANT_TABLE = os.environ.get("PARTICIPANT_TABLE", "draw2seed_v2_participants")
+ENROLLMENT_TABLE = os.environ.get("ENROLLMENT_TABLE", "draw2seed_v2_enrollments")
+VERIFICATION_TABLE = os.environ.get("VERIFICATION_TABLE", "draw2seed_v2_verifications")
+DATASET_VERSION = os.environ.get("DRAW2SEED_DATASET_VERSION", "draw2seed_v2_clean")
+ALGORITHM_VERSION = os.environ.get("DRAW2SEED_ALGORITHM_VERSION", "draw2seed-v2-baseline")
+CONFIG_VERSION = os.environ.get("DRAW2SEED_CONFIG_VERSION", "v2-baseline-2026-07")
+COLLECTION_SITE = os.environ.get("DRAW2SEED_COLLECTION_SITE", "public_render")
 AUTO_LOG_ENROLLMENTS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_ENROLLMENTS", "1") != "0"
 AUTO_LOG_VERIFICATIONS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_VERIFICATIONS", "1") != "0"
 
@@ -46,6 +53,18 @@ if PUBLIC_ENABLE_SERVER_LOGGING and create_client and SUPABASE_URL and SUPABASE_
     supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 app = Flask(__name__, static_folder=str(STATIC), static_url_path="")
+
+
+def _algorithm_code_hash() -> str:
+    digest = hashlib.sha256()
+    package = SRC / "drawing_rng"
+    for source_path in sorted(package.glob("*.py")):
+        digest.update(source_path.name.encode("utf-8"))
+        digest.update(source_path.read_bytes())
+    return digest.hexdigest()[:20]
+
+
+ALGORITHM_CODE_HASH = _algorithm_code_hash()
 
 
 def _stamp() -> str:
@@ -97,9 +116,57 @@ def _redact_for_logs(obj: Any) -> Any:
 def _insert_supabase(table: str, row: Dict[str, Any]) -> str | None:
     if not supabase:
         return None
-    res = supabase.table(table).insert(row).execute()
-    return (res.data or [{}])[0].get("id")
+    payload = dict(row)
+    payload.setdefault("id", str(uuid4()))
+    supabase.table(table).insert(payload).execute()
+    return str(payload["id"])
 
+
+
+_ALLOWED_ATTEMPT_TYPES = {
+    "owner_test", "blind_impostor", "informed_forgery", "near_miss",
+    "true_wrong_shape", "bad_sample", "step_up_component",
+}
+
+
+def _normalise_attempt_type(value: Any) -> str:
+    attempt_type = str(value or "owner_test").strip()
+    return attempt_type if attempt_type in _ALLOWED_ATTEMPT_TYPES else "bad_sample"
+
+
+def _research_metadata(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "dataset_version": DATASET_VERSION,
+        "algorithm_version": ALGORITHM_VERSION,
+        "algorithm_code_hash": ALGORITHM_CODE_HASH,
+        "config_version": CONFIG_VERSION,
+        "collection_site": COLLECTION_SITE,
+        "collection_session": payload.get("collection_session"),
+        "device_type": payload.get("device_type"),
+        "input_method": payload.get("input_method") or payload.get("device_type"),
+    }
+
+
+def _ensure_participant(payload: Dict[str, Any]) -> None:
+    if not supabase:
+        return
+    participant_id = str(payload.get("participant_id") or "").strip()
+    if not participant_id:
+        return
+    row = {
+        "participant_id": participant_id,
+        "participant_role": payload.get("participant_role") or "participant",
+        "consent_version": payload.get("consent_version") or "v2-consent-2026-07",
+        "dataset_version": DATASET_VERSION,
+        "collection_site": COLLECTION_SITE,
+        "collection_session": payload.get("collection_session"),
+    }
+    try:
+        supabase.table(PARTICIPANT_TABLE).insert(row).execute()
+    except Exception as exc:
+        message = str(exc)
+        if "23505" not in message and "duplicate key" not in message.lower():
+            raise
 
 
 _OPTIONAL_ENROLLMENT_COLUMNS = {
@@ -143,7 +210,10 @@ def _insert_enrollment_with_schema_fallback(row: Dict[str, Any]) -> Dict[str, An
                 "retry_error": str(retry_exc),
             }
 
-def _log_enrollment(participant_id: Any, seed_label: Any, attempts: Any, result: Dict[str, Any], notes: Any = "", ui_version: str = "seed-enrollment-codefreeze") -> Dict[str, Any]:
+def _log_enrollment(participant_id: Any, seed_label: Any, attempts: Any, result: Dict[str, Any], notes: Any = "", ui_version: str = "seed-enrollment-codefreeze", metadata: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    metadata = dict(metadata or {})
+    metadata.setdefault("participant_id", participant_id)
+    _ensure_participant(metadata)
     row = {
         "participant_id": participant_id,
         "seed_label": seed_label or "drawing_seed",
@@ -163,6 +233,7 @@ def _log_enrollment(participant_id: Any, seed_label: Any, attempts: Any, result:
         "ui_version": ui_version,
         "notes": notes or "",
         "user_agent": request.headers.get("User-Agent", ""),
+        **_research_metadata(metadata),
     }
     return _insert_enrollment_with_schema_fallback(row)
 
@@ -224,15 +295,20 @@ def _insert_verification_with_schema_fallback(row: Dict[str, Any]) -> Dict[str, 
             }
 
 def _log_verification(payload: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    _ensure_participant(payload)
     enrollment_result = payload.get("enrollment_result") or {}
     geometry_scores = result.get("geometry_scores") or {}
     scene_scores = result.get("scene_scores") or {}
     fuzzy = result.get("fuzzy_recovery") or {}
+    actor_participant_id = payload.get("participant_id")
+    owner_participant_id = payload.get("owner_participant_id") or enrollment_result.get("participant_id")
     row = {
         "enrollment_id": payload.get("enrollment_id") or enrollment_result.get("enrollment_id"),
-        "participant_id": payload.get("participant_id"),
+        "participant_id": actor_participant_id,
+        "actor_participant_id": actor_participant_id,
+        "owner_participant_id": owner_participant_id,
         "seed_label": payload.get("seed_label"),
-        "attempt_type": payload.get("attempt_type") or "owner_test",
+        "attempt_type": _normalise_attempt_type(payload.get("attempt_type")),
         "redraw_strokes": payload.get("redraw_strokes") or [],
         "verification_result": _redact_for_logs(result),
         "accepted": result.get("accepted"),
@@ -242,10 +318,13 @@ def _log_verification(payload: Dict[str, Any], result: Dict[str, Any]) -> Dict[s
         "token_score_weighted": result.get("token_score_weighted"),
         "token_bigram_score": result.get("token_bigram_score"),
         "geometry_final": geometry_scores.get("geometry_final"),
+        "component_count_score": geometry_scores.get("count"),
         "layout_score": geometry_scores.get("layout"),
         "relation_score": geometry_scores.get("relation"),
+        "topology_score": geometry_scores.get("topology"),
         "curve_score": geometry_scores.get("curve"),
         "stroke_shape_score": geometry_scores.get("stroke_shape"),
+        "closed_style_score": geometry_scores.get("closed_style"),
         "complex_scene_mode": result.get("complex_scene_mode"),
         "scene_final": scene_scores.get("scene_final"),
         "scene_assignment": scene_scores.get("scene_assignment"),
@@ -257,9 +336,19 @@ def _log_verification(payload: Dict[str, Any], result: Dict[str, Any]) -> Dict[s
         "component_score": result.get("component_score"),
         "fuzzy_ok": fuzzy.get("ok") if isinstance(fuzzy, dict) else None,
         "fuzzy_mode": fuzzy.get("ecc_mode") if isinstance(fuzzy, dict) else None,
+        "fuzzy_hamming_distance": fuzzy.get("hamming_distance") if isinstance(fuzzy, dict) else None,
+        "fuzzy_max_correctable_bits": fuzzy.get("max_correctable_bits") if isinstance(fuzzy, dict) else None,
+        "gate_trace": result.get("gate_trace"),
+        "primary_accepted": result.get("primary_accepted"),
         "failure_reasons": result.get("failure_reasons") or [],
-        "ui_version": payload.get("ui_version", "seed-enrollment-codefreeze"),
+        "geometry_failure_reasons": result.get("geometry_failure_reasons_diagnostic") or [],
+        "scene_failure_reasons": result.get("scene_failure_reasons") or [],
+        "observation_mode": payload.get("observation_mode") or "unknown",
+        "practice_allowed": payload.get("practice_allowed"),
+        "practice_attempts": payload.get("practice_attempts"),
+        "ui_version": payload.get("ui_version", "draw2seed-v2-clean"),
         "user_agent": request.headers.get("User-Agent", ""),
+        **_research_metadata(payload),
     }
     return _insert_verification_with_schema_fallback(row)
 
@@ -285,6 +374,13 @@ def health():
         "ok": True,
         "service": "Drawing-RNG public demo",
         "supabase_configured": supabase is not None,
+        "dataset_version": DATASET_VERSION,
+        "participant_table": PARTICIPANT_TABLE,
+        "enrollment_table": ENROLLMENT_TABLE,
+        "verification_table": VERIFICATION_TABLE,
+        "algorithm_version": ALGORITHM_VERSION,
+        "algorithm_code_hash": ALGORITHM_CODE_HASH,
+        "config_version": CONFIG_VERSION,
         "server_logging_enabled": PUBLIC_ENABLE_SERVER_LOGGING,
         "auto_log_enrollments": AUTO_LOG_ENROLLMENTS,
         "auto_log_verifications": AUTO_LOG_VERIFICATIONS,
@@ -315,14 +411,19 @@ def analyze_enrollment_route():
     if not isinstance(payload, dict):
         return jsonify({"error": "JSON body must be an object"}), 400
     attempts = payload.get("attempts", [])
-    if not isinstance(attempts, list) or len(attempts) < 2:
-        return jsonify({"error": "Need at least 2 attempts; 3 is recommended."}), 400
+    if not isinstance(attempts, list) or len(attempts) < 3:
+        return jsonify({"error": "Draw2Seed v2 requires three fresh enrollment attempts."}), 400
     try:
         result = analyze_enrollment(
             attempts=attempts,
             domain=str(payload.get("domain") or "example.com"),
             salt=payload.get("public_salt"),
         )
+        result["participant_id"] = payload.get("participant_id")
+        result["dataset_version"] = DATASET_VERSION
+        result["algorithm_version"] = ALGORITHM_VERSION
+        result["algorithm_code_hash"] = ALGORITHM_CODE_HASH
+        result["config_version"] = CONFIG_VERSION
         if AUTO_LOG_ENROLLMENTS:
             try:
                 saved = _log_enrollment(
@@ -331,7 +432,8 @@ def analyze_enrollment_route():
                     attempts=attempts,
                     result=result,
                     notes=payload.get("notes", ""),
-                    ui_version=payload.get("ui_version", "seed-enrollment-codefreeze"),
+                    ui_version=payload.get("ui_version", "draw2seed-v2-clean"),
+                    metadata=payload,
                 )
                 result["enrollment_saved"] = saved
                 if saved.get("id"):
@@ -486,6 +588,9 @@ def save_enrollment():
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
+    if not isinstance(attempts, list) or len(attempts) < 3:
+        return jsonify({"error": "Draw2Seed v2 requires three fresh enrollment attempts."}), 400
+    _ensure_participant(payload)
     row = {
         "participant_id": payload.get("participant_id"),
         "seed_label": payload.get("seed_label") or "drawing_seed",
@@ -502,9 +607,10 @@ def save_enrollment():
         "scene_stability_score": result.get("scene_stability_score"),
         "timing_stability_score": result.get("timing_stability_score"),
         "public_salt": result.get("public_salt"),
-        "ui_version": payload.get("ui_version", "seed-enrollment-v1"),
+        "ui_version": payload.get("ui_version", "draw2seed-v2-clean"),
         "notes": payload.get("notes", ""),
         "user_agent": request.headers.get("User-Agent", ""),
+        **_research_metadata(payload),
     }
 
     saved = _insert_enrollment_with_schema_fallback(row)
