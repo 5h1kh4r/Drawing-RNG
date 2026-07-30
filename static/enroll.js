@@ -8,8 +8,38 @@ const stepCanvas = document.getElementById('stepCanvas');
 const step = stepCanvas ? setupCanvas(stepCanvas, document.getElementById('stepCount')) : null;
 
 const pid = document.getElementById('pid');
+const actorPid = document.getElementById('actorPid');
+
 pid.textContent = makeParticipantId();
-document.getElementById('newPid').onclick = () => pid.textContent = newParticipantId();
+if (actorPid) actorPid.value = pid.textContent;
+
+document.getElementById('newPid').onclick = () => {
+  pid.textContent = newParticipantId();
+  if (actorPid) actorPid.value = pid.textContent;
+};
+
+function studyMetadata() {
+  const practiceAttempts =
+    Number(document.getElementById('practiceAttempts')?.value || 0);
+
+  return {
+    participant_role:
+      document.getElementById('participantRole')?.value || 'participant',
+    consent_version: 'v2-consent-2026-07',
+    collection_session:
+      document.getElementById('collectionSession')?.value || 'unspecified',
+    device_type:
+      document.getElementById('deviceType')?.value || 'unknown',
+    input_method:
+      document.getElementById('deviceType')?.value || 'unknown',
+    observation_mode:
+      document.getElementById('observationMode')?.value || 'unknown',
+    practice_allowed:
+      Boolean(document.getElementById('practiceAllowed')?.checked),
+    practice_attempts:
+      Number.isFinite(practiceAttempts) ? practiceAttempts : 0,
+  };
+}
 
 let attempts = [];
 let analysisResult = null;
@@ -485,7 +515,8 @@ document.getElementById('analyze').onclick = async () => {
       participant_id: pid.textContent,
       seed_label: document.getElementById('seedLabel').value,
       notes: document.getElementById('notes').value,
-      ui_version: 'public-demo-autolog-phase4-3'
+      ui_version: 'draw2seed-v2-clean',
+      ...studyMetadata()
     });
     renderResult(analysisResult);
     setSteps();
@@ -510,7 +541,8 @@ document.getElementById('analyze').onclick = async () => {
         participant_id: pid.textContent,
         seed_label: document.getElementById('seedLabel').value,
         notes: document.getElementById('notes').value,
-        ui_version: 'public-demo-autolog-phase4-3'
+        ui_version: 'draw2seed-v2-clean',
+      ...studyMetadata()
       });
       renderResult(analysisResult);
     }
@@ -521,7 +553,8 @@ document.getElementById('analyze').onclick = async () => {
       notes: document.getElementById('notes').value,
       attempts,
       result: analysisResult,
-      ui_version: 'public-demo-manual-save-phase4-3'
+      ui_version: 'draw2seed-v2-clean',
+      ...studyMetadata()
     });
     out(res.storage === 'disabled' ? 'Server logging disabled in the public demo. Enrollment remains available in this browser session.' : 'Enrollment saved. ' + JSON.stringify(res), 'ok');
   } catch (e) {
@@ -567,11 +600,13 @@ document.getElementById('unlockVault').onclick = async () => {
     verifyResult = await postJson('/api/verify_redraw', {
       enrollment_result: analysisResult,
       enrollment_id: analysisResult.enrollment_id || (analysisResult.enrollment_saved && analysisResult.enrollment_saved.id),
-      participant_id: pid.textContent,
+      participant_id: actorPid?.value || pid.textContent,
+      owner_participant_id: analysisResult.participant_id || pid.textContent,
       seed_label: document.getElementById('seedLabel').value,
       attempt_type: (document.getElementById('attemptType') ? document.getElementById('attemptType').value : 'owner_test'),
       redraw_strokes: redrawStrokes,
-      ui_version: 'public-demo-autolog-phase4-3'
+      ui_version: 'draw2seed-v2-clean',
+      ...studyMetadata()
     });
 
     document.getElementById('verifyJson').textContent = JSON.stringify(verifyResult, null, 2);
