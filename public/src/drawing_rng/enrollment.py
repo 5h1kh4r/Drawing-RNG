@@ -554,23 +554,12 @@ def verify_redraw(
         and layout_score >= 0.55
         and relation_score >= 0.55
     )
-    step_up_challenge = _step_up_component_challenge(scene_model) if (suspicious_accept or borderline_reject) else None
-    if step_up_challenge:
-        step_up_challenge["trigger"] = "suspicious_accept" if suspicious_accept else "borderline_reject"
-
-    # Full step-up mode: a suspicious complex-scene accept is not allowed to
-    # reveal outputs immediately.  It becomes an intermediate state that must
-    # be cleared by verify_step_up_component().  This directly targets the
-    # screenshot/informed-forgery issue without making honest complex redraws
-    # fail outright.
+    # Dataset-v2 freeze: component step-up disabled.
+    # Keep the existing token, geometry, topology and complex-scene
+    # threshold decision as the final authentication result.
     primary_accepted = bool(accepted)
-    step_up_required = bool(step_up_challenge and (suspicious_accept or borderline_reject))
-    if step_up_required:
-        accepted = False
-        outputs = None
-        output_source = None
-        if "step_up_component_required" not in failure_reasons:
-            failure_reasons.append("step_up_component_required")
+    step_up_required = False
+    step_up_challenge = None
 
     return {
         "accepted": accepted,
