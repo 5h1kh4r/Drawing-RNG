@@ -939,13 +939,12 @@ def compare_geometry(sig_a: Dict[str, Any], sig_b: Dict[str, Any]) -> Dict[str, 
 
 
 def geometry_thresholds(profile: str) -> Dict[str, float]:
-    """Prototype gates for geometry-aware verification."""
+    """v2.1 owner-tolerant geometry gates; still independent hard gates."""
     if profile == "strict":
-        return {"layout": 0.55, "relation": 0.60, "topology": 0.60, "curve": 0.55, "stroke_shape": 0.62, "closed_style": 0.58, "geometry_final": 0.64}
+        return {"layout": 0.54, "relation": 0.59, "topology": 0.59, "curve": 0.53, "stroke_shape": 0.61, "closed_style": 0.57, "geometry_final": 0.62}
     if profile == "tolerant":
-        return {"layout": 0.62, "relation": 0.65, "topology": 0.65, "curve": 0.58, "stroke_shape": 0.68, "closed_style": 0.62, "geometry_final": 0.70}
-    return {"layout": 0.58, "relation": 0.62, "topology": 0.62, "curve": 0.55, "stroke_shape": 0.65, "closed_style": 0.60, "geometry_final": 0.67}
-
+        return {"layout": 0.60, "relation": 0.63, "topology": 0.63, "curve": 0.56, "stroke_shape": 0.65, "closed_style": 0.61, "geometry_final": 0.68}
+    return {"layout": 0.57, "relation": 0.61, "topology": 0.61, "curve": 0.53, "stroke_shape": 0.63, "closed_style": 0.59, "geometry_final": 0.65}
 
 def geometry_failure_reasons(scores: Dict[str, Any], profile: str) -> List[str]:
     thresholds = geometry_thresholds(profile)
@@ -984,7 +983,7 @@ def geometry_failure_reasons(scores: Dict[str, Any], profile: str) -> List[str]:
     # strokes, shape has to be very close, because layout/relation alone cannot
     # distinguish them.
     if single_open:
-        min_shape = 0.76 if profile == "tolerant" else 0.72
+        min_shape = 0.70 if profile == "tolerant" else 0.68
         if float(scores.get("stroke_shape", 0.0)) < min_shape:
             reasons.append(f"single_open_shape_below_{min_shape:.2f}")
 

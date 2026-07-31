@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from itertools import combinations
 from statistics import median
 from typing import Any, Dict, List
@@ -50,14 +52,13 @@ def accepted_for_demo(score: float) -> bool:
 
 
 def token_threshold_for_profile(profile: str) -> float:
-    # Prototype verification thresholds. Tolerant mode strips more detail,
-    # so it must require a higher token match.
+    # v2.1 owner-tolerant thresholds. Tolerant mode still remains stricter
+    # because its quantization deliberately removes more trajectory detail.
     if profile == "strict":
-        return 0.40
+        return 0.38
     if profile == "tolerant":
-        return 0.65
-    return 0.50
-
+        return 0.60
+    return 0.47
 
 def _region_name(center: Any) -> str:
     try:
@@ -122,6 +123,74 @@ def _minimum_complexity_failures(tokens: List[str]) -> List[str]:
     if _unique_direction_token_count(tokens) < 3:
         failures.append("too_few_unique_directions")
     return failures
+
+
+# Draw2Seed v2.1: multi-reference and long-single-stroke helpers.
+def _single_open_geometry(signature: Dict[str, Any]) -> bool:
+    components = signature.get("components") or []
+    return len(components) == 1 and not bool(components[0].get("closed"))
+
+
+def _banded_dtw_similarity(
+    geometry_a: Dict[str, Any],
+    geometry_b: Dict[str, Any],
+    band_fraction: float = 0.22,
+    distance_scale: float = 0.30,
+) -> float:
+    """Orientation-preserving DTW for one long open stroke.
+
+    The band allows modest arc-length timing drift but does not permit stroke
+    reversal or arbitrary point reordering.
+    """
+    if not (_single_open_geometry(geometry_a) and _single_open_geometry(geometry_b)):
+        return 0.0
+
+    points_a = (geometry_a.get("components") or [{}])[0].get("points_local") or []
+    points_b = (geometry_b.get("components") or [{}])[0].get("points_local") or []
+    if len(points_a) < 2 or len(points_b) < 2:
+        return 0.0
+
+    a = [(float(p[0]), float(p[1])) for p in points_a]
+    b = [(float(p[0]), float(p[1])) for p in points_b]
+    n, m = len(a), len(b)
+    band = max(abs(n - m), int(max(n, m) * band_fraction) + 1)
+    infinity = float("inf")
+    cost = [[infinity] * (m + 1) for _ in range(n + 1)]
+    steps = [[0] * (m + 1) for _ in range(n + 1)]
+    cost[0][0] = 0.0
+
+    for i in range(1, n + 1):
+        j_start = max(1, i - band)
+        j_end = min(m, i + band)
+        for j in range(j_start, j_end + 1):
+            candidates = [
+                (cost[i - 1][j], steps[i - 1][j]),
+                (cost[i][j - 1], steps[i][j - 1]),
+                (cost[i - 1][j - 1], steps[i - 1][j - 1]),
+            ]
+            previous_cost, previous_steps = min(candidates, key=lambda item: (item[0], item[1]))
+            if previous_cost == infinity:
+                continue
+            distance = math.hypot(a[i - 1][0] - b[j - 1][0], a[i - 1][1] - b[j - 1][1])
+            cost[i][j] = previous_cost + distance
+            steps[i][j] = previous_steps + 1
+
+    if cost[n][m] == infinity or steps[n][m] <= 0:
+        return 0.0
+    average_distance = cost[n][m] / steps[n][m]
+    return max(0.0, min(1.0, 1.0 - average_distance / max(distance_scale, 1e-9)))
+
+
+def _verification_reference_payloads(encoded_attempts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "attempt": int(item.get("attempt", index + 1)),
+            "tokens": list(item.get("tokens") or []),
+            "geometry": item.get("geometry") or {},
+        }
+        for index, item in enumerate(encoded_attempts)
+        if item.get("tokens") and item.get("geometry")
+    ]
 
 
 def _encode_attempts(attempts: List[Dict[str, Any]], profile: str) -> List[Dict[str, Any]]:
@@ -290,6 +359,8 @@ def analyze_enrollment(attempts: List[Dict[str, Any]], domain: str = "example.co
         "canonical_geometry": central.get("geometry") or {},
         "canonical_token_count": len(central["tokens"]),
         "unique_direction_token_count": _unique_direction_token_count(central["tokens"]),
+        "verification_references": _verification_reference_payloads(best["encoded_attempts"]),
+        "verification_reference_count": len(best["encoded_attempts"]),
         "minimum_complexity_failures": hard_reject_reasons,
         "warnings": warnings,
         "seed_quality": seed_quality,
@@ -349,7 +420,6 @@ def verify_redraw(
     profile = enrollment_result.get("recommended_profile") or "balanced"
     if profile not in PROFILES:
         raise ValueError(f"Unknown enrolled profile: {profile}")
-
     if threshold is None:
         threshold = token_threshold_for_profile(profile)
     else:
@@ -366,16 +436,89 @@ def verify_redraw(
         "params": params,
     })
     redraw_tokens = redraw_encoded.get("tokens") or []
-
-    token_score = token_similarity(canonical_tokens, redraw_tokens)
-    token_score_weighted = weighted_token_similarity(canonical_tokens, redraw_tokens)
-    token_bigram_score = token_bigram_jaccard(canonical_tokens, redraw_tokens)
-
-    canonical_geometry = enrollment_result.get("canonical_geometry") or {}
     redraw_geometry = extract_geometry_signature(redraw_strokes, params)
-    geometry_scores = compare_geometry(canonical_geometry, redraw_geometry)
     geom_thresholds = geometry_thresholds(profile)
+
+    raw_references = enrollment_result.get("verification_references")
+    if not isinstance(raw_references, list) or not raw_references:
+        raw_references = [{
+            "attempt": enrollment_result.get("central_attempt", 1),
+            "tokens": canonical_tokens,
+            "geometry": enrollment_result.get("canonical_geometry") or {},
+        }]
+
+    reference_scores: List[Dict[str, Any]] = []
+    for index, reference in enumerate(raw_references):
+        if not isinstance(reference, dict):
+            continue
+        reference_tokens = reference.get("tokens") or []
+        reference_geometry = reference.get("geometry") or {}
+        if not isinstance(reference_tokens, list) or not reference_tokens or not isinstance(reference_geometry, dict):
+            continue
+
+        ref_token = token_similarity(reference_tokens, redraw_tokens)
+        ref_weighted = weighted_token_similarity(reference_tokens, redraw_tokens)
+        ref_bigram = token_bigram_jaccard(reference_tokens, redraw_tokens)
+        ref_geometry_scores = compare_geometry(reference_geometry, redraw_geometry)
+        ref_geometry_final = float(ref_geometry_scores.get("geometry_final", 0.0))
+        ref_dtw = _banded_dtw_similarity(reference_geometry, redraw_geometry)
+        ref_support = max(0.0, min(1.0,
+            0.45 * ref_token +
+            0.20 * ref_weighted +
+            0.25 * ref_geometry_final +
+            0.10 * ref_dtw
+        ))
+        ref_rank = max(0.0, min(1.0,
+            0.42 * ref_token +
+            0.18 * ref_weighted +
+            0.30 * ref_geometry_final +
+            0.10 * ref_dtw
+        ))
+        reference_scores.append({
+            "reference_index": index,
+            "attempt": reference.get("attempt", index + 1),
+            "tokens": reference_tokens,
+            "geometry": reference_geometry,
+            "token_score": ref_token,
+            "token_score_weighted": ref_weighted,
+            "token_bigram_score": ref_bigram,
+            "geometry_scores": ref_geometry_scores,
+            "geometry_final": ref_geometry_final,
+            "single_open_dtw_score": ref_dtw,
+            "support_score": ref_support,
+            "rank_score": ref_rank,
+        })
+
+    if not reference_scores:
+        raise ValueError("enrollment_result contains no usable verification references")
+
+    reference_scores.sort(key=lambda item: item["rank_score"], reverse=True)
+    selected_reference = reference_scores[0]
+    canonical_tokens = selected_reference["tokens"]
+    canonical_geometry = selected_reference["geometry"]
+    token_score = float(selected_reference["token_score"])
+    token_score_weighted = float(selected_reference["token_score_weighted"])
+    token_bigram_score = float(selected_reference["token_bigram_score"])
+    geometry_scores = selected_reference["geometry_scores"]
     geom_failures = geometry_failure_reasons(geometry_scores, profile)
+    single_open_dtw_score = float(selected_reference["single_open_dtw_score"])
+    support_scores = sorted((float(item["support_score"]) for item in reference_scores), reverse=True)
+    second_reference_support = support_scores[1] if len(support_scores) >= 2 else support_scores[0]
+    multi_reference_consistency_pass = len(reference_scores) < 2 or second_reference_support >= 0.50
+    selected_reference_attempt = selected_reference.get("attempt")
+    reference_diagnostics = [
+        {
+            "reference_index": item["reference_index"],
+            "attempt": item["attempt"],
+            "token_score": item["token_score"],
+            "token_score_weighted": item["token_score_weighted"],
+            "geometry_final": item["geometry_final"],
+            "single_open_dtw_score": item["single_open_dtw_score"],
+            "support_score": item["support_score"],
+            "rank_score": item["rank_score"],
+        }
+        for item in reference_scores
+    ]
 
     scene_model = enrollment_result.get("scene_model") if isinstance(enrollment_result.get("scene_model"), dict) else None
     if scene_model and isinstance(scene_model.get("canonical_scene"), dict):
@@ -403,6 +546,30 @@ def verify_redraw(
     token_pass = token_score >= threshold
     geometry_pass = not geom_failures
     diagnostic_high_score = final_score > 0.80
+
+    single_open_case = bool(geometry_scores.get("single_open_stroke_case"))
+    recoverable_single_open_failures = all(
+        reason.startswith((
+            "curve_below_",
+            "stroke_shape_below_",
+            "single_open_shape_below_",
+            "geometry_final_below_",
+        ))
+        for reason in geom_failures
+    )
+    single_open_recovery_pass = bool(
+        single_open_case
+        and len(reference_scores) >= 2
+        and token_score >= max(0.0, threshold - 0.10)
+        and token_score_weighted >= max(0.0, threshold - 0.08)
+        and single_open_dtw_score >= 0.68
+        and float(geometry_scores.get("stroke_shape", 0.0)) >= 0.58
+        and geometry_final >= 0.64
+        and float(geometry_scores.get("layout", 0.0)) >= 0.80
+        and float(geometry_scores.get("curve", 0.0)) >= 0.50
+        and second_reference_support >= 0.56
+        and recoverable_single_open_failures
+    )
 
     # Complex-scene mode deliberately changes the abstraction, but it must not
     # become an informed-forgery bypass.  Phase 2.10 made this path too lenient:
@@ -462,11 +629,14 @@ def verify_redraw(
     if complex_scene_mode:
         accepted = complex_token_pass and scene_pass and complex_geometry_floor_pass
     else:
-        # Security decision must remain an all-or-nothing hard gate. The previous
-        # high-confidence override accepted redraws based on blended final_score
-        # even when geometry gates had failed, which invalidated near-miss/FAR
-        # interpretation and contradicted the documented architecture.
-        accepted = token_pass and geometry_pass
+        # Simple symbols remain hard-gated. A narrow, independently supported
+        # recovery band is available only for long one-stroke gestures whose
+        # pointwise alignment drifted but whose DTW/geometry/reference evidence
+        # remains strong.
+        accepted = bool(
+            (token_pass and geometry_pass)
+            or single_open_recovery_pass
+        )
 
     failure_reasons: List[str] = []
     overridden_failure_reasons: List[str] = []
@@ -487,9 +657,12 @@ def verify_redraw(
         # not hard-fail complex scenes solely because micro-stroke count/pairing
         # changed.
     else:
-        if not token_pass:
-            failure_reasons.append(f"token_score_below_{threshold:.2f}")
-        failure_reasons.extend(geom_failures)
+        if single_open_recovery_pass:
+            overridden_failure_reasons.append("single_open_owner_recovery_band_used")
+        else:
+            if not token_pass:
+                failure_reasons.append(f"token_score_below_{threshold:.2f}")
+            failure_reasons.extend(geom_failures)
 
     seed_material = enrollment_result.get("canonical_seed_material") or ""
     salt = enrollment_result.get("public_salt") or ""
@@ -580,6 +753,13 @@ def verify_redraw(
         "diagnostic_high_score": diagnostic_high_score,
         "high_confidence_threshold": 0.80,
         "overridden_failure_reasons": overridden_failure_reasons,
+        "selected_reference_attempt": selected_reference_attempt,
+        "verification_reference_count": len(reference_scores),
+        "reference_scores": reference_diagnostics,
+        "second_reference_support": second_reference_support,
+        "multi_reference_consistency_pass": multi_reference_consistency_pass,
+        "single_open_dtw_score": single_open_dtw_score,
+        "single_open_recovery_pass": single_open_recovery_pass,
         "suspicious_accept": suspicious_accept,
         "borderline_reject": borderline_reject,
         "primary_accepted": primary_accepted,
