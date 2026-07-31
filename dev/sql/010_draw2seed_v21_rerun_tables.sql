@@ -6,7 +6,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.draw2seed_v21_enrollment_reruns (
   id uuid primary key default gen_random_uuid(),
   source_enrollment_id uuid not null references public.draw2seed_v2_enrollments(id)
-    on update cascade on delete restrict,
+    on update cascade on delete cascade,
   participant_id text,
   source_algorithm_version text,
   rerun_algorithm_version text not null,
@@ -32,9 +32,9 @@ create table if not exists public.draw2seed_v21_enrollment_reruns (
 create table if not exists public.draw2seed_v21_verification_reruns (
   id uuid primary key default gen_random_uuid(),
   source_verification_id uuid not null references public.draw2seed_v2_verifications(id)
-    on update cascade on delete restrict,
+    on update cascade on delete cascade,
   source_enrollment_id uuid not null references public.draw2seed_v2_enrollments(id)
-    on update cascade on delete restrict,
+    on update cascade on delete cascade,
   attempt_type text not null,
   source_algorithm_version text,
   rerun_algorithm_version text not null,
