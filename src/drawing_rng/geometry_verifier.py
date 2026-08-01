@@ -18,6 +18,7 @@ from .stroke_token_encoder import (
     stroke_box,
 )
 
+
 Point = Tuple[float, float]
 
 
@@ -986,6 +987,9 @@ def geometry_failure_reasons(scores: Dict[str, Any], profile: str) -> List[str]:
         min_shape = 0.70 if profile == "tolerant" else 0.68
         if float(scores.get("stroke_shape", 0.0)) < min_shape:
             reasons.append(f"single_open_shape_below_{min_shape:.2f}")
+
+    # Pairwise straightness remains diagnostic. The final hard decision is made
+    # only from multi-reference enrollment consensus in v22_wrapper.py.
 
     if float(scores.get("count", 0.0)) < 1.0:
         reasons.append("stroke_count_mismatch")

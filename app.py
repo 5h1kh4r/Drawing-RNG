@@ -18,7 +18,11 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from drawing_rng.enrollment import analyze_enrollment, verify_redraw, verify_step_up_component
+from drawing_rng.enrollment import verify_step_up_component
+from drawing_rng.v22_wrapper import (
+    analyze_enrollment_v22 as analyze_enrollment,
+    verify_redraw_v22 as verify_redraw,
+)
 from drawing_rng.profiles import get_profile
 from drawing_rng.stroke_token_encoder import encode_json_payload
 from drawing_rng.use_case_simulator import simulate_use_cases, simulation_summary
@@ -42,8 +46,8 @@ PARTICIPANT_TABLE = os.environ.get("PARTICIPANT_TABLE", "draw2seed_v2_participan
 ENROLLMENT_TABLE = os.environ.get("ENROLLMENT_TABLE", "draw2seed_v2_enrollments")
 VERIFICATION_TABLE = os.environ.get("VERIFICATION_TABLE", "draw2seed_v2_verifications")
 DATASET_VERSION = os.environ.get("DRAW2SEED_DATASET_VERSION", "draw2seed_v2_clean")
-ALGORITHM_VERSION = os.environ.get("DRAW2SEED_ALGORITHM_VERSION", "draw2seed-v2-baseline")
-CONFIG_VERSION = os.environ.get("DRAW2SEED_CONFIG_VERSION", "v2-baseline-2026-07")
+ALGORITHM_VERSION = os.environ.get("DRAW2SEED_ALGORITHM_VERSION", "draw2seed-v2.2.7-hough-residual")
+CONFIG_VERSION = os.environ.get("DRAW2SEED_CONFIG_VERSION", "v2.2.7-hough-residual-2026-08-01")
 COLLECTION_SITE = os.environ.get("DRAW2SEED_COLLECTION_SITE", "public_render")
 AUTO_LOG_ENROLLMENTS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_ENROLLMENTS", "1") != "0"
 AUTO_LOG_VERIFICATIONS = PUBLIC_ENABLE_SERVER_LOGGING and os.environ.get("AUTO_LOG_VERIFICATIONS", "1") != "0"
@@ -131,6 +135,12 @@ _ALLOWED_ATTEMPT_TYPES = {
 
 def _normalise_attempt_type(value: Any) -> str:
     attempt_type = str(value or "owner_test").strip()
+    aliases = {
+        "wrong_shape": "true_wrong_shape",
+        "concept_variant": "near_miss",
+        "ambiguous": "bad_sample",
+    }
+    attempt_type = aliases.get(attempt_type, attempt_type)
     return attempt_type if attempt_type in _ALLOWED_ATTEMPT_TYPES else "bad_sample"
 
 
@@ -251,6 +261,12 @@ _OPTIONAL_VERIFICATION_COLUMNS = {
     "step_up_required",
     "step_up_passed",
     "component_score",
+    "structural_score",
+    "structural_gate_pass",
+    "structural_failure_reasons",
+    "shape_lock_baseline_score",
+    "shape_lock_baseline_threshold",
+    "shape_lock_baseline_pass",
 }
 
 
@@ -338,6 +354,12 @@ def _log_verification(payload: Dict[str, Any], result: Dict[str, Any]) -> Dict[s
         "fuzzy_mode": fuzzy.get("ecc_mode") if isinstance(fuzzy, dict) else None,
         "fuzzy_hamming_distance": fuzzy.get("hamming_distance") if isinstance(fuzzy, dict) else None,
         "fuzzy_max_correctable_bits": fuzzy.get("max_correctable_bits") if isinstance(fuzzy, dict) else None,
+        "structural_score": result.get("structural_score"),
+        "structural_gate_pass": result.get("structural_gate_pass"),
+        "structural_failure_reasons": result.get("structural_failure_reasons") or [],
+        "shape_lock_baseline_score": result.get("shape_lock_baseline_score"),
+        "shape_lock_baseline_threshold": result.get("shape_lock_baseline_threshold"),
+        "shape_lock_baseline_pass": result.get("shape_lock_baseline_pass"),
         "gate_trace": result.get("gate_trace"),
         "primary_accepted": result.get("primary_accepted"),
         "failure_reasons": result.get("failure_reasons") or [],
