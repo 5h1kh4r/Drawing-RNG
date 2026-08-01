@@ -194,8 +194,24 @@ function showVerificationDetail(row) {
     ['Geometry', row.geometry_final],
     ['Layout', row.layout_score ?? geometry.layout],
     ['Relation', row.relation_score ?? geometry.relation],
-    ['Curve', row.curve_score ?? geometry.curve],
+    ['Curve primary', row.curve_score ?? geometry.curve],
+    ['Hough line style score', geometry.hough_style_score],
+    ['Hough gate applicable', geometry.hough_style_applicable],
+    ['Hough line style gate', geometry.hough_style_pass],
+    ['Hough line coverage', geometry.hough_line_coverage],
+    ['Hough long-line coverage', geometry.hough_long_line_coverage],
+    ['Hough stable lines', geometry.hough_stable_line_count],
+    ['Hough hard gate reliable', geometry.hough_style_hard_gate_reliable],
+    ['Hough critical violations', geometry.hough_style_critical_violation_count],
+    ['Hough medium violations', geometry.hough_style_medium_violation_count],
+    ['Hough bend violations', geometry.hough_style_bend_violation_count],
+    ['Hough severe bend violations', geometry.hough_style_severe_bend_violation_count],
+    ['Hough lost-line failure', geometry.hough_style_lost_line_failure],
+    ['Hough bend failure', geometry.hough_style_bend_failure],
     ['Stroke shape', row.stroke_shape_score ?? geometry.stroke_shape],
+    ['Structural score', row.structural_score ?? result.structural_score],
+    ['Structural gate', (row.structural_gate_pass ?? result.structural_gate_pass) ? 1 : 0],
+    ['ShapeLock baseline', row.shape_lock_baseline_score ?? result.shape_lock_baseline_score],
     ['Fuzzy', row.fuzzy_ok ? 1 : 0]
   ].forEach(([label, value]) => metrics.appendChild(scoreBlock(label, value)));
 
@@ -284,8 +300,10 @@ function renderVerifyResult(result) {
     'Geometry final: ' + n3(geometry.geometry_final),
     'Layout: ' + n3(geometry.layout),
     'Relation: ' + n3(geometry.relation),
-    'Curve: ' + n3(geometry.curve),
+    'Curve primary: ' + n3(geometry.curve),
     'Shape: ' + n3(geometry.stroke_shape),
+    'Structural: ' + n3(result.structural_score) + ' (' + (result.structural_gate_pass ? 'pass' : 'fail') + ')',
+    'ShapeLock baseline: ' + n3(result.shape_lock_baseline_score) + ' / ' + n3(result.shape_lock_baseline_threshold) + ' (' + (result.shape_lock_baseline_pass ? 'pass' : 'fail') + ')',
     'Fuzzy: ' + (result.fuzzy_recovery ? (result.fuzzy_recovery.ok ? 'OK' : 'FAILED') : 'not run')
   ];
   if (result.high_confidence_override) {
