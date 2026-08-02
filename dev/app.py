@@ -42,6 +42,8 @@ PROMPT_TABLE = os.environ.get("PROMPT_TABLE", "stroke_samples")
 PARTICIPANT_TABLE = os.environ.get("PARTICIPANT_TABLE", "draw2seed_v2_participants")
 ENROLLMENT_TABLE = os.environ.get("ENROLLMENT_TABLE", "draw2seed_v2_enrollments")
 VERIFICATION_TABLE = os.environ.get("VERIFICATION_TABLE", "draw2seed_v2_verifications")
+LEGACY_ENROLLMENT_TABLE = os.environ.get("LEGACY_ENROLLMENT_TABLE", "drawing_seed_enrollments")
+LEGACY_VERIFICATION_TABLE = os.environ.get("LEGACY_VERIFICATION_TABLE", "drawing_seed_verifications")
 DATASET_VERSION = os.environ.get("DRAW2SEED_DATASET_VERSION", "draw2seed_v2_clean")
 ALGORITHM_VERSION = os.environ.get("DRAW2SEED_ALGORITHM_VERSION", "draw2seed-v2.2.7-hough-residual")
 CONFIG_VERSION = os.environ.get("DRAW2SEED_CONFIG_VERSION", "v2.2.7-hough-residual-2026-08-01")
@@ -675,13 +677,50 @@ def _require_supabase():
         raise RuntimeError("Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
 
 
-def _fetch_enrollment_row(enrollment_id: str) -> Dict[str, Any]:
+def _dev_dataset_spec(value: Any = None) -> tuple[str, Dict[str, Any]]:
+    raw = value if value is not None else request.args.get("dataset", "v2")
+    key = str(raw or "v2").strip().lower()
+    datasets = {
+        "v2": {
+            "key": "v2",
+            "label": "V2 clean",
+            "enrollment_table": ENROLLMENT_TABLE,
+            "verification_table": VERIFICATION_TABLE,
+            "allow_new_verifications": True,
+        },
+        "legacy": {
+            "key": "legacy",
+            "label": "Legacy cleanup",
+            "enrollment_table": LEGACY_ENROLLMENT_TABLE,
+            "verification_table": LEGACY_VERIFICATION_TABLE,
+            "allow_new_verifications": False,
+        },
+    }
+    if key not in datasets:
+        raise ValueError("Unknown dev dataset. Expected 'v2' or 'legacy'.")
+    return key, datasets[key]
+
+
+def _dev_tag_row(row: Dict[str, Any], dataset_key: str) -> Dict[str, Any]:
+    tagged = dict(row)
+    tagged["_dev_dataset"] = dataset_key
+    return tagged
+
+
+def _fetch_enrollment_row(enrollment_id: str, dataset_key: str = "v2") -> Dict[str, Any]:
     _require_supabase()
-    res = supabase.table(ENROLLMENT_TABLE).select("*").eq("id", enrollment_id).limit(1).execute()
+    key, spec = _dev_dataset_spec(dataset_key)
+    res = (
+        supabase.table(spec["enrollment_table"])
+        .select("*")
+        .eq("id", enrollment_id)
+        .limit(1)
+        .execute()
+    )
     rows = res.data or []
     if not rows:
-        raise ValueError(f"Enrollment not found: {enrollment_id}")
-    return rows[0]
+        raise ValueError(f"Enrollment not found in {key}: {enrollment_id}")
+    return _dev_tag_row(rows[0], key)
 
 
 def _enrollment_result_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -690,9 +729,6 @@ def _enrollment_result_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
         result = json.loads(result)
     if not isinstance(result, dict):
         result = {}
-    # Attach DB metadata needed by verification/logging. The analysis_result in
-    # Supabase is intentionally redacted, but it still contains tokens, geometry,
-    # profile, public_salt and fuzzy_helper.
     result.setdefault("enrollment_id", row.get("id"))
     result.setdefault("recommended_profile", row.get("recommended_profile") or "balanced")
     result.setdefault("public_salt", row.get("public_salt") or "")
@@ -703,13 +739,72 @@ def _enrollment_result_from_row(row: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+@app.get("/api/dev/datasets")
+def dev_dataset_summary():
+    try:
+        _require_supabase()
+        datasets = []
+        for dataset_key in ("v2", "legacy"):
+            key, spec = _dev_dataset_spec(dataset_key)
+            enrollment_rows = (
+                supabase.table(spec["enrollment_table"]).select("id").execute().data or []
+            )
+            verification_rows = (
+                supabase.table(spec["verification_table"]).select("id").execute().data or []
+            )
+            datasets.append({
+                **spec,
+                "key": key,
+                "enrollment_count": len(enrollment_rows),
+                "verification_count": len(verification_rows),
+            })
+        return jsonify({"ok": True, "datasets": datasets})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.get("/api/dev/enrollments")
 def dev_list_enrollments():
     try:
         _require_supabase()
-        res = supabase.table(ENROLLMENT_TABLE).select("*").order("created_at", desc=True).execute()
-        rows = res.data or []
-        return jsonify({"ok": True, "count": len(rows), "enrollments": rows})
+        dataset_key, spec = _dev_dataset_spec()
+        eres = (
+            supabase.table(spec["enrollment_table"])
+            .select("*")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        vres = (
+            supabase.table(spec["verification_table"])
+            .select("id,enrollment_id,attempt_type")
+            .execute()
+        )
+        verification_counts: Dict[str, int] = {}
+        mixed_counts: Dict[str, int] = {}
+        for verification in vres.data or []:
+            enrollment_id = str(verification.get("enrollment_id") or "")
+            if not enrollment_id:
+                continue
+            verification_counts[enrollment_id] = verification_counts.get(enrollment_id, 0) + 1
+            if str(verification.get("attempt_type") or "") == "wrong_shape":
+                mixed_counts[enrollment_id] = mixed_counts.get(enrollment_id, 0) + 1
+
+        rows = []
+        for raw_row in eres.data or []:
+            row = _dev_tag_row(raw_row, dataset_key)
+            enrollment_id = str(row.get("id") or "")
+            row["_dev_verification_count"] = verification_counts.get(enrollment_id, 0)
+            row["_dev_wrong_shape_count"] = mixed_counts.get(enrollment_id, 0)
+            rows.append(row)
+
+        return jsonify({
+            "ok": True,
+            "dataset": dataset_key,
+            "dataset_label": spec["label"],
+            "allow_new_verifications": spec["allow_new_verifications"],
+            "count": len(rows),
+            "enrollments": rows,
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -717,9 +812,27 @@ def dev_list_enrollments():
 @app.get("/api/dev/enrollments/<enrollment_id>")
 def dev_get_enrollment(enrollment_id: str):
     try:
-        row = _fetch_enrollment_row(enrollment_id)
-        vres = supabase.table(VERIFICATION_TABLE).select("*").eq("enrollment_id", enrollment_id).order("created_at", desc=True).execute()
-        return jsonify({"ok": True, "enrollment": row, "verifications": vres.data or []})
+        dataset_key, spec = _dev_dataset_spec()
+        row = _fetch_enrollment_row(enrollment_id, dataset_key)
+        vres = (
+            supabase.table(spec["verification_table"])
+            .select("*")
+            .eq("enrollment_id", enrollment_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        verifications = [
+            _dev_tag_row(verification, dataset_key)
+            for verification in (vres.data or [])
+        ]
+        return jsonify({
+            "ok": True,
+            "dataset": dataset_key,
+            "dataset_label": spec["label"],
+            "allow_new_verifications": spec["allow_new_verifications"],
+            "enrollment": row,
+            "verifications": verifications,
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -728,13 +841,19 @@ def dev_get_enrollment(enrollment_id: str):
 def dev_list_verifications():
     try:
         _require_supabase()
+        dataset_key, spec = _dev_dataset_spec()
         enrollment_id = request.args.get("enrollment_id")
-        q = supabase.table(VERIFICATION_TABLE).select("*")
+        q = supabase.table(spec["verification_table"]).select("*")
         if enrollment_id:
             q = q.eq("enrollment_id", enrollment_id)
         res = q.order("created_at", desc=True).execute()
-        rows = res.data or []
-        return jsonify({"ok": True, "count": len(rows), "verifications": rows})
+        rows = [_dev_tag_row(row, dataset_key) for row in (res.data or [])]
+        return jsonify({
+            "ok": True,
+            "dataset": dataset_key,
+            "count": len(rows),
+            "verifications": rows,
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -743,11 +862,22 @@ def dev_list_verifications():
 def dev_get_verification(verification_id: str):
     try:
         _require_supabase()
-        res = supabase.table(VERIFICATION_TABLE).select("*").eq("id", verification_id).limit(1).execute()
+        dataset_key, spec = _dev_dataset_spec()
+        res = (
+            supabase.table(spec["verification_table"])
+            .select("*")
+            .eq("id", verification_id)
+            .limit(1)
+            .execute()
+        )
         rows = res.data or []
         if not rows:
             return jsonify({"ok": False, "error": "Verification attempt not found"}), 404
-        return jsonify({"ok": True, "verification": rows[0]})
+        return jsonify({
+            "ok": True,
+            "dataset": dataset_key,
+            "verification": _dev_tag_row(rows[0], dataset_key),
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -756,13 +886,14 @@ def dev_get_verification(verification_id: str):
 def dev_update_verification_type(verification_id: str):
     try:
         _require_supabase()
+        dataset_key, spec = _dev_dataset_spec()
         payload = request.get_json(force=True, silent=False)
         raw_attempt_type = str((payload or {}).get("attempt_type") or "").strip()
         if not raw_attempt_type:
             return jsonify({"ok": False, "error": "Missing verification attempt_type"}), 400
         attempt_type = _normalise_attempt_type(raw_attempt_type)
         res = (
-            supabase.table(VERIFICATION_TABLE)
+            supabase.table(spec["verification_table"])
             .update({"attempt_type": attempt_type})
             .eq("id", verification_id)
             .execute()
@@ -772,25 +903,43 @@ def dev_update_verification_type(verification_id: str):
             return jsonify({"ok": False, "error": "Verification attempt not found"}), 404
         return jsonify({
             "ok": True,
-            "verification": rows[0],
+            "dataset": dataset_key,
+            "verification": _dev_tag_row(rows[0], dataset_key),
             "canonical_attempt_type": attempt_type,
         })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
+
 
 @app.post("/api/dev/verify_existing")
 def dev_verify_existing():
     payload = request.get_json(force=True, silent=False)
     if not isinstance(payload, dict):
         return jsonify({"ok": False, "error": "JSON body must be an object"}), 400
+
+    try:
+        dataset_key, spec = _dev_dataset_spec(payload.get("dataset"))
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    if not spec["allow_new_verifications"]:
+        return jsonify({
+            "ok": False,
+            "error": (
+                "Legacy cleanup mode is read/relabel/delete only. "
+                "New attempts continue to be collected in the v2 clean dataset."
+            ),
+        }), 409
+
     enrollment_id = payload.get("enrollment_id")
     redraw_strokes = payload.get("redraw_strokes")
     if not enrollment_id:
         return jsonify({"ok": False, "error": "Missing enrollment_id"}), 400
     if not isinstance(redraw_strokes, list) or not redraw_strokes:
         return jsonify({"ok": False, "error": "Missing redraw_strokes"}), 400
+
     try:
-        row = _fetch_enrollment_row(str(enrollment_id))
+        row = _fetch_enrollment_row(str(enrollment_id), dataset_key)
         enrollment_result = _enrollment_result_from_row(row)
         result = verify_redraw(
             enrollment_result=enrollment_result,
@@ -821,8 +970,13 @@ def dev_verify_existing():
 def dev_delete_verification(verification_id: str):
     try:
         _require_supabase()
-        supabase.table(VERIFICATION_TABLE).delete().eq("id", verification_id).execute()
-        return jsonify({"ok": True, "deleted_verification_id": verification_id})
+        dataset_key, spec = _dev_dataset_spec()
+        supabase.table(spec["verification_table"]).delete().eq("id", verification_id).execute()
+        return jsonify({
+            "ok": True,
+            "dataset": dataset_key,
+            "deleted_verification_id": verification_id,
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -831,13 +985,21 @@ def dev_delete_verification(verification_id: str):
 def dev_delete_enrollment(enrollment_id: str):
     try:
         _require_supabase()
-        # Delete linked verifications first to avoid orphan records.
-        supabase.table(VERIFICATION_TABLE).delete().eq("enrollment_id", enrollment_id).execute()
-        supabase.table(ENROLLMENT_TABLE).delete().eq("id", enrollment_id).execute()
-        return jsonify({"ok": True, "deleted_enrollment_id": enrollment_id, "linked_verifications_deleted": True})
+        dataset_key, spec = _dev_dataset_spec()
+        supabase.table(spec["verification_table"]).delete().eq(
+            "enrollment_id", enrollment_id
+        ).execute()
+        supabase.table(spec["enrollment_table"]).delete().eq(
+            "id", enrollment_id
+        ).execute()
+        return jsonify({
+            "ok": True,
+            "dataset": dataset_key,
+            "deleted_enrollment_id": enrollment_id,
+            "linked_verifications_deleted": True,
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
-
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)

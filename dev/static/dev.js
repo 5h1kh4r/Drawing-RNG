@@ -5,6 +5,9 @@ let enrollments = [];
 let selected = null;
 let selectedVerifications = [];
 let selectedVerification = null;
+let activeDataset = 'v2';
+let datasetCatalog = {};
+let allowNewVerifications = true;
 
 function $(id) { return document.getElementById(id); }
 function shortId(value) { return String(value || '').slice(0, 8); }
@@ -27,6 +30,38 @@ function patchJson(url, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
+}
+function datasetUrl(path) {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}dataset=${encodeURIComponent(activeDataset)}`;
+}
+function datasetLabel() {
+  return (datasetCatalog[activeDataset] && datasetCatalog[activeDataset].label) || activeDataset;
+}
+function clearSelection(message = 'Select a stored record from the list.') {
+  selected = null;
+  selectedVerifications = [];
+  selectedVerification = null;
+  $('selectedTitle').textContent = 'Choose an enrollment';
+  $('selectedMeta').textContent = message;
+  $('selectedStatus').textContent = 'Idle';
+  $('selectedStatus').className = 'status-pill neutral';
+  $('enrollmentPreviews').innerHTML = '';
+  $('verificationDetail').classList.add('hidden');
+  drawing.clear();
+  renderVerifications();
+}
+function updateDatasetMode() {
+  const legacy = activeDataset === 'legacy';
+  const button = $('submitVerification');
+  button.disabled = legacy || !allowNewVerifications;
+  button.textContent = legacy ? 'Disabled for legacy cleanup' : 'Verify and log';
+  $('attemptType').disabled = legacy;
+  $('testerId').disabled = legacy;
+  $('verifyOutput').textContent = legacy
+    ? 'Legacy cleanup mode: inspect, relabel, mark bad samples, or delete records. New attempts stay in v2.'
+    : 'Select an enrollment, then draw a verification attempt.';
+  $('verifyOutput').className = 'output';
 }
 
 function jsonValue(value, fallback) {
@@ -124,7 +159,11 @@ function renderEnrollmentList() {
     const meta = document.createElement('span');
     const ar = row.analysis_result || {};
     const q = ar.seed_quality_score || (ar.seed_quality && ar.seed_quality.quality_score);
-    meta.textContent = `${row.participant_id || 'no participant'} · ${row.recommended_profile || 'no profile'} · stability ${n3(row.stability_score)}` + (q !== undefined ? ` · quality ${n3(q)}/100` : '');
+    const storedCount = Number(row._dev_verification_count || 0);
+    const mixedCount = Number(row._dev_wrong_shape_count || 0);
+    meta.textContent = `${row.participant_id || 'no participant'} · ${row.recommended_profile || 'no profile'} · stability ${n3(row.stability_score)} · ${storedCount} attempts`
+      + (q !== undefined ? ` · quality ${n3(q)}/100` : '')
+      + (mixedCount ? ` · REVIEW ${mixedCount} mixed wrong_shape` : '');
     const date = document.createElement('span');
     date.className = 'tiny';
     date.textContent = `${row.created_at || ''} · ${shortId(row.id)}`;
@@ -141,7 +180,7 @@ function renderSelected() {
   const ar = selected.analysis_result || {};
   const q = ar.seed_quality_score || (ar.seed_quality && ar.seed_quality.quality_score);
   const ql = ar.seed_quality_label || (ar.seed_quality && ar.seed_quality.quality_label);
-  $('selectedMeta').textContent = `${selected.participant_id || 'no participant'} · ${selected.recommended_profile || 'no profile'} · stability ${n3(selected.stability_score)}` + (q !== undefined ? ` · quality ${n3(q)}/100 ${ql || ''}` : '') + ` · ID ${selected.id}`;
+  $('selectedMeta').textContent = `${datasetLabel()} · ${selected.participant_id || 'no participant'} · ${selected.recommended_profile || 'no profile'} · stability ${n3(selected.stability_score)}` + (q !== undefined ? ` · quality ${n3(q)}/100 ${ql || ''}` : '') + ` · ID ${selected.id}`;
   $('selectedStatus').textContent = selected.accepted_for_demo ? 'Accepted enrollment' : 'Weak enrollment';
   $('selectedStatus').className = 'status-pill ' + (selected.accepted_for_demo ? 'granted' : 'denied');
 
@@ -159,7 +198,7 @@ function renderSelected() {
     preview.height = 220;
     card.append(label, preview);
     previews.appendChild(card);
-    drawPreview(preview, attempt.strokes || []);
+    drawPreview(preview, Array.isArray(attempt) ? attempt : (attempt.strokes || []));
   });
 }
 
@@ -178,7 +217,7 @@ function showVerificationDetail(row) {
   selectedVerification = row;
   $('verificationDetail').classList.remove('hidden');
   $('detailTitle').textContent = attemptLabel(row);
-  $('detailMeta').textContent = `${row.attempt_type || 'unknown type'} · ${row.created_at || ''} · ID ${row.id}`;
+  $('detailMeta').textContent = `${datasetLabel()} · ${row.attempt_type || 'unknown type'} · ${row.created_at || ''} · ID ${row.id}`;
   $('detailStatus').textContent = row.accepted ? 'Accepted' : 'Rejected';
   $('detailStatus').className = 'status-pill ' + (row.accepted ? 'granted' : 'denied');
   $('detailAttemptType').value = row.attempt_type || 'owner_test';
@@ -226,12 +265,15 @@ function renderVerifications() {
     box.innerHTML = '<div class="empty-state">Select an enrollment to view its verification attempts.</div>';
     return;
   }
-  if (!selectedVerifications.length) {
-    box.innerHTML = '<div class="empty-state">No verification attempts are stored for this enrollment.</div>';
+  const filter = $('verificationFilter').value;
+  const visibleRows = filter
+    ? selectedVerifications.filter(row => String(row.attempt_type || '') === filter)
+    : selectedVerifications;
+  if (!visibleRows.length) {
+    box.innerHTML = '<div class="empty-state">No verification attempts match this filter.</div>';
     return;
   }
-
-  selectedVerifications.forEach(row => {
+  visibleRows.forEach(row => {
     const item = document.createElement('article');
     item.className = 'verification-row';
 
@@ -269,25 +311,38 @@ function renderVerifications() {
   });
 }
 
+async function loadDatasetCatalog() {
+  const data = await getJson('/api/dev/datasets');
+  datasetCatalog = {};
+  (data.datasets || []).forEach(dataset => {
+    datasetCatalog[dataset.key] = dataset;
+  });
+  const summary = Object.values(datasetCatalog)
+    .map(dataset => `${dataset.label}: ${dataset.enrollment_count} enrollments / ${dataset.verification_count} verifications`)
+    .join(' · ');
+  $('datasetSummary').textContent = summary || 'No dataset counts available.';
+}
 async function refreshAll() {
   $('enrollmentList').innerHTML = '<div class="empty-state">Loading enrollments...</div>';
-  const data = await getJson('/api/dev/enrollments');
+  await loadDatasetCatalog();
+  const data = await getJson(datasetUrl('/api/dev/enrollments'));
   enrollments = data.enrollments || [];
+  allowNewVerifications = Boolean(data.allow_new_verifications);
+  updateDatasetMode();
   renderEnrollmentList();
 }
-
 async function selectEnrollment(id) {
-  const data = await getJson('/api/dev/enrollments/' + id);
+  const data = await getJson(datasetUrl('/api/dev/enrollments/' + id));
   selected = data.enrollment;
   selectedVerifications = data.verifications || [];
   selectedVerification = null;
+  allowNewVerifications = Boolean(data.allow_new_verifications);
   $('verificationDetail').classList.add('hidden');
   renderEnrollmentList();
   renderSelected();
   renderVerifications();
   drawing.clear();
-  $('verifyOutput').textContent = 'Enrollment selected. Draw and log a new verification attempt.';
-  $('verifyOutput').className = 'output';
+  updateDatasetMode();
 }
 
 function renderVerifyResult(result) {
@@ -326,8 +381,8 @@ function renderVerifyResult(result) {
 }
 
 async function deleteVerification(row) {
-  if (!confirm(`Delete “${attemptLabel(row)}” from Supabase?`)) return;
-  await deleteJson('/api/dev/verifications/' + row.id);
+  if (!confirm(`Delete “${attemptLabel(row)}” from ${datasetLabel()}?`)) return;
+  await deleteJson(datasetUrl('/api/dev/verifications/' + row.id));
   if (selectedVerification && selectedVerification.id === row.id) {
     selectedVerification = null;
     $('verificationDetail').classList.add('hidden');
@@ -336,6 +391,13 @@ async function deleteVerification(row) {
 }
 
 $('refreshAll').onclick = refreshAll;
+$('datasetSelect').onchange = async () => {
+  activeDataset = $('datasetSelect').value;
+  $('verificationFilter').value = activeDataset === 'legacy' ? 'wrong_shape' : '';
+  clearSelection(`Switched to ${activeDataset}. Select an enrollment.`);
+  await refreshAll();
+};
+$('verificationFilter').onchange = renderVerifications;
 $('search').oninput = renderEnrollmentList;
 $('undo').onclick = () => drawing.undo();
 $('clear').onclick = () => drawing.clear();
@@ -357,6 +419,7 @@ $('submitVerification').onclick = async () => {
     $('verifyOutput').textContent = 'Verifying and logging the attempt...';
 
     const result = await postJson('/api/dev/verify_existing', {
+      dataset: activeDataset,
       enrollment_id: selected.id,
       redraw_strokes: strokes,
       attempt_type: $('attemptType').value,
@@ -387,7 +450,7 @@ $('updateAttemptType').onclick = async () => {
   try {
     button.disabled = true;
     button.textContent = 'Saving...';
-    const data = await patchJson('/api/dev/verifications/' + selectedVerification.id, {
+    const data = await patchJson(datasetUrl('/api/dev/verifications/' + selectedVerification.id), {
       attempt_type: attemptType
     });
     const updated = data.verification;
@@ -412,9 +475,9 @@ $('deleteEnrollment').onclick = async () => {
     alert('Select an enrollment first.');
     return;
   }
-  if (!confirm(`Delete enrollment “${selected.seed_label || shortId(selected.id)}” and every linked verification attempt?`)) return;
+  if (!confirm(`Delete enrollment “${selected.seed_label || shortId(selected.id)}” from ${datasetLabel()} and every linked verification attempt?`)) return;
   if (!confirm('This cannot be undone. Delete it permanently?')) return;
-  await deleteJson('/api/dev/enrollments/' + selected.id);
+  await deleteJson(datasetUrl('/api/dev/enrollments/' + selected.id));
   selected = null;
   selectedVerifications = [];
   selectedVerification = null;

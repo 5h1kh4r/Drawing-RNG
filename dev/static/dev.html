@@ -45,6 +45,14 @@
         <p class="muted small">Select a record to inspect its attempts.</p>
       </div>
       <div class="field">
+        <label for="datasetSelect">Dataset</label>
+        <select id="datasetSelect">
+          <option value="v2">V2 clean dataset</option>
+          <option value="legacy">Legacy dataset cleanup</option>
+        </select>
+        <p class="tiny" id="datasetSummary">Loading dataset counts...</p>
+      </div>
+      <div class="field">
         <label for="search">Search records</label>
         <input id="search" type="search" placeholder="Label, participant, or ID">
       </div>
@@ -104,6 +112,19 @@
           <h2>Stored verification attempts</h2>
           <p class="muted small">Open any attempt to inspect its drawing and full score breakdown.</p>
         </div>
+        <div class="field compact-field">
+          <label for="verificationFilter">Filter attempts</label>
+          <select id="verificationFilter">
+            <option value="">All attempt types</option>
+            <option value="wrong_shape">Legacy mixed wrong_shape — needs review</option>
+            <option value="owner_test">Owner redraw</option>
+            <option value="blind_impostor">Blind impostor</option>
+            <option value="informed_forgery">Informed forgery</option>
+            <option value="near_miss">Near miss</option>
+            <option value="true_wrong_shape">True wrong shape</option>
+            <option value="bad_sample">Bad sample</option>
+          </select>
+        </div>
         <div id="verificationList" class="verification-list"><div class="empty-state">No enrollment selected.</div></div>
       </section>
 
@@ -130,8 +151,6 @@
                   <option value="near_miss">Near miss</option>
                   <option value="true_wrong_shape">True wrong shape</option>
                   <option value="bad_sample">Bad sample</option>
-            <option value="true_wrong_shape">True wrong shape</option>
-            <option value="bad_sample">Bad sample</option>
                 </select>
                 <button class="btn primary" id="updateAttemptType" type="button">Update type</button>
               </div>
