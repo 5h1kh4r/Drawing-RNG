@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Draw2Seed — Gesture Study</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><main class="shell"><header><div class="brand"><span class="mark">✳</span> Draw2Seed <span class="muted">/ Research Study</span></div><span class="version">v2.4</span></header>
+<section class="card" id="main">
+  <div id="progress" class="progress hide"><div id="progressFill"></div></div>
+  <div class="eyebrow" id="step"></div><h1 id="title">Welcome to Draw2Seed</h1><p class="detail" id="instruction"></p>
+  <div id="welcome" class="hide">
+    <p class="small">You'll choose a gesture, repeat it, and complete short drawing tasks. Your drawings and timing data are saved for security research, not used as a real password.</p>
+    <label class="check"><input type="checkbox" id="consent"> I agree to participate and allow these drawings to be stored for research.</label>
+    <label class="check"><input type="checkbox" id="share"> Other volunteers may see my reference gesture in optional imitation tasks.</label>
+    <button class="primary" id="start">Begin study</button>
+    <div class="resume"><label for="resumeCode">Returning participant?</label><div class="inline"><input id="resumeCode" placeholder="Return code"><button id="resume">Resume</button></div></div>
+  </div>
+  <div id="capture" class="hide">
+    <div id="targetBox" class="target hide"><div class="targetLabel">Reference to copy</div><canvas id="targetCanvas"></canvas></div>
+    <div class="drawing"><canvas id="canvas"></canvas><div class="canvasHint">Draw here · use mouse, finger, or stylus</div></div>
+    <div class="actions"><button id="clear" class="ghost">Clear drawing</button><button id="submit" class="primary">Submit drawing <span aria-hidden="true">→</span></button></div>
+  </div>
+  <div id="completion" class="hide"><p class="small">Your session is saved. Return after at least 18 hours for the optional follow-up.</p><button class="primary hide" id="followup">Start follow-up</button></div>
+  <div id="recovery" class="hide"><div class="codeHead">Save your return code</div><div class="inline"><code id="recoveryValue"></code><button id="copy">Copy</button></div><p class="small">Needed if you clear this browser's cookies. Do not share this code.</p><button id="dismiss">I saved it</button></div>
+  <div id="error" role="alert" aria-live="polite"></div>
+</section><footer><span>No real passwords or secrets.</span><div><button class="textButton" id="withdraw">Delete my study data</button><button class="textButton" id="switch">New participant on this browser</button></div></footer>
+</main><script src="/static/app.js" defer></script></body></html>
